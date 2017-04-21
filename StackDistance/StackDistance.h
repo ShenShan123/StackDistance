@@ -8,14 +8,56 @@
 #include <assert.h>
 #include <iostream>
 
+#include <unordered_map>
+
+#define MISS_BAR 513
+
+template <class U>
+class Histogram
+{
+	std::map<U, int> bins;
+
+public:
+	Histogram() {};
+
+	~Histogram() {};
+
+	void sample(U x)
+	{
+		if (!bins[x]) {
+			bins[x] = 1;
+		}
+		else
+			++bins[x];
+	}
+
+	void print(std::ofstream * & f)
+	{
+		std::map<int, int>::iterator it;
+
+		for (it = bins.begin(); it != bins.end(); ++it) {
+			*f << "dist" << it->first << "\t\t";
+			*f << it->second << std::endl;
+		}
+	}
+
+	void changeAssoc()
+	{
+
+	}
+};
+
 template <class T>
 class AvlNode
 {
 	//int holes;
-	//friend class AvlTree<T>;
+	//friend class AvlTreeStack<T>;
 
 public:
+	/* this is the num of holes of this tree,
+	including the holes of subtrees and the self interval. */
 	int holes;
+	/* this is the num of holes of entire right subtree. */
 	int rHoles;
 	std::pair<T, T> interval;
 	int height;
@@ -60,35 +102,39 @@ public:
 	}
 };
 
-template <class L>
-class AvlTree
+class AvlTreeStack
 {
-	AvlNode<L> * root;
-	friend class Reader;
-public:
+	AvlNode<long> * root;
+	bool isRoot;
+	Histogram<int> hist;
+	std::map <uint64_t, long> addrMap;
+	long index;
 	int dist;
 
-	AvlTree(L & v) : dist(0)
+public:
+
+	AvlTreeStack(long & v) : dist(0)
 	{
-		root = new AvlNode<L>(v);
+		root = new AvlNode<long>(v);
+		isRoot = true;
 	}
 
-	AvlTree() : root(nullptr), dist(0) {};
+	AvlTreeStack() : root(nullptr), dist(0), isRoot(false) {};
 
-	void setRoot(L & v)
+	void setRoot(long & v)
 	{
-		root = new AvlNode<L>(v);
+		root = new AvlNode<long>(v);
 	}
 
-	~AvlTree() { destroy(root); }
+	~AvlTreeStack() { destroy(root); }
 
-	void destroy(AvlNode<L> * & tree);
+	void destroy(AvlNode<long> * & tree);
 
-	void insert(AvlNode<L> * & tree, L & v);
+	void insert(AvlNode<long> * & tree, long & v);
 
-	void insert(L & a);
+	void insert(long & a);
 
-	/*AvlNode<L> * & find(AvlNode<L> * & tree, int & v)
+	/*AvlNode<long> * & find(AvlNode<long> * & tree, int & v)
 	{
 	if (!tree)
 	return nullptr;
@@ -101,17 +147,107 @@ public:
 	return tree;
 	}*/
 
-	std::pair<L, L> & findMin(AvlNode<L> * & tree);
+	std::pair<long, long> & findMin(AvlNode<long> * & tree);
 
-	std::pair<L, L> & findMax(AvlNode<L> * & tree);
+	std::pair<long, long> & findMax(AvlNode<long> * & tree);
 
-	void remove(AvlNode<L> * & tree, std::pair<L, L> & inter);
+	void remove(AvlNode<long> * & tree, std::pair<long, long> & inter);
 
-	void rotate(AvlNode<L> * & tree);
+	void rotate(AvlNode<long> * & tree);
 
-	void doubleRotate(AvlNode<L> * & tree);
+	void doubleRotate(AvlNode<long> * & tree);
 
-	void balance(AvlNode<L> * & tree);
+	void balance(AvlNode<long> * & tree);
+
+	void calStackDist(uint64_t addr)
+	{
+		long & value = addrMap[addr];
+
+		++index;
+
+		/* value is 0 under cold miss */
+		if (!value) {
+			hist.sample(MISS_BAR);
+			value = index;
+			return;
+		}
+
+		/* update b of last reference */
+		if (value < index) {
+			/* set a root of the tree */
+			if (isRoot) {
+				setRoot(value);
+				isRoot = false;
+			}
+			else {
+				/* insert a hole */
+				insert(value);
+				int stackDist = index - value - dist;
+				stackDist = stackDist >= MISS_BAR ? MISS_BAR : stackDist;
+				hist.sample(stackDist);
+			}
+		}
+
+		value = index;
+	}
+
+	void print(std::string fname)
+	{
+		std::ofstream * file = new std::ofstream(fname);
+		hist.print(file);
+		file->close();
+		delete file;
+	}
+};
+
+class ListStack
+{
+	std::list<uint64_t> addrList;
+
+	Histogram<int> hist;
+
+public:
+	ListStack() {};
+
+	~ListStack() {};
+
+	void calStackDist(uint64_t addr) 
+	{
+		std::list<uint64_t>::iterator it;
+		/* start counting the distance from 1 */
+		long distance = 1;
+		bool found = false;
+
+		for (it = addrList.begin(); it != addrList.end(); ++it)
+		{
+			if (*it == addr) {
+				addrList.erase(it);
+				hist.sample(distance);
+				found = true;
+				break;
+			}
+			else
+				++distance;
+		}
+
+		/* cold miss */
+		if (!found)
+			hist.sample(MISS_BAR);
+
+		if (addrList.size() >= MISS_BAR) {
+			addrList.pop_back();
+		}
+		/* push new address to the head of the list */
+		addrList.push_front(addr);
+	};
+
+	void print(std::string fname)
+	{
+		std::ofstream * file = new std::ofstream(fname);
+		hist.print(file);
+		file->close();
+		delete file;
+	}
 };
 
 class Reader
@@ -119,10 +255,8 @@ class Reader
 private:
 	std::ifstream file;
 	std::string line;
-	std::map <uint64_t, long> addrMap;
-	long index;
-	std::vector <bool> b;
-	AvlTree<long> tree;
+	AvlTreeStack avlTreeStack;
+	ListStack listStack;
 
 public:
 	Reader(std::string _path);

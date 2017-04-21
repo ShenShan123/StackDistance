@@ -4,8 +4,8 @@
 #include "stdafx.h"
 #include "StackDistance.h"
 
-template <class L>
-void AvlTree<L>::destroy(AvlNode<L> * & tree)
+
+void AvlTreeStack::destroy(AvlNode<long> * & tree)
 {
 	if (!tree)
 		return;
@@ -16,18 +16,18 @@ void AvlTree<L>::destroy(AvlNode<L> * & tree)
 	tree = nullptr;
 }
 
-template <class L>
-void AvlTree<L>::insert(AvlNode<L> * & tree, L & v) {
+
+void AvlTreeStack::insert(AvlNode<long> * & tree, long & v) {
 	if (!tree) {
-		tree = new AvlNode<L>(v);
+		tree = new AvlNode<long>(v);
 		return;
 	}
 
-	std::pair<L, L> & interval = tree->interval;
+	std::pair<long, long> & interval = tree->interval;
 	assert(!(v >= interval.first && v <= interval.second));
 
-	AvlNode<L> * & n1 = tree->left;
-	AvlNode<L> * & n2 = tree->right;
+	AvlNode<long> * & n1 = tree->left;
+	AvlNode<long> * & n2 = tree->right;
 
 	if (tree->holes < 0)
 		return;
@@ -36,7 +36,7 @@ void AvlTree<L>::insert(AvlNode<L> * & tree, L & v) {
 		dist += interval.second - v + tree->rHoles;
 		interval.first = v;
 		if (n1) {
-			std::pair<L, L> & temp = findMax(n1);
+			std::pair<long, long> & temp = findMax(n1);
 			if (v == temp.second + 1) {
 				interval.first = temp.first;
 				remove(n1, temp);
@@ -47,7 +47,7 @@ void AvlTree<L>::insert(AvlNode<L> * & tree, L & v) {
 		dist += tree->rHoles;
 		interval.second = v;
 		if (n2) {
-			std::pair<L, L> & temp = findMin(n2);
+			std::pair<long, long> & temp = findMin(n2);
 			if (v == temp.first - 1) {
 				interval.second = temp.second;
 				remove(n2, temp);
@@ -64,11 +64,11 @@ void AvlTree<L>::insert(AvlNode<L> * & tree, L & v) {
 	balance(tree);
 }
 
-template <class L>
-void AvlTree<L>::insert(L & a) { dist = 0; insert(root, a); }
 
-template <class L>
-std::pair<L, L> & AvlTree<L>::findMin(AvlNode<L> * & tree)
+void AvlTreeStack::insert(long & a) { dist = 0; insert(root, a); }
+
+
+std::pair<long, long> & AvlTreeStack::findMin(AvlNode<long> * & tree)
 {
 	assert(tree);
 
@@ -78,8 +78,8 @@ std::pair<L, L> & AvlTree<L>::findMin(AvlNode<L> * & tree)
 		findMin(tree->left);
 }
 
-template <class L>
-std::pair<L, L> & AvlTree<L>::findMax(AvlNode<L> * & tree)
+
+std::pair<long, long> & AvlTreeStack::findMax(AvlNode<long> * & tree)
 {
 	assert(tree);
 
@@ -89,8 +89,8 @@ std::pair<L, L> & AvlTree<L>::findMax(AvlNode<L> * & tree)
 		findMax(tree->right);
 }
 
-template <class L>
-void AvlTree<L>::remove(AvlNode<L> * & tree, std::pair<L, L> & inter)
+
+void AvlTreeStack::remove(AvlNode<long> * & tree, std::pair<long, long> & inter)
 {
 	if (!tree)
 		return;
@@ -100,15 +100,15 @@ void AvlTree<L>::remove(AvlNode<L> * & tree, std::pair<L, L> & inter)
 	else if (inter.first < tree->interval.first)
 		remove(tree->left, inter);
 	else if (tree->left && tree->right) {
-		std::pair<L, L> & temp = findMin(tree->right);
+		std::pair<long, long> & temp = findMin(tree->right);
 		remove(tree, temp);
 	}
 	else {
-		AvlNode<L> * old = tree;
+		AvlNode<long> * old = tree;
 		if (!tree->left && !tree->right)
 			tree = nullptr;
 		else
-			tree = new AvlNode<L>(*(tree->left ? tree->left : tree->right));
+			tree = new AvlNode<long>(*(tree->left ? tree->left : tree->right));
 
 		delete old;
 	}
@@ -116,8 +116,8 @@ void AvlTree<L>::remove(AvlNode<L> * & tree, std::pair<L, L> & inter)
 	balance(tree);
 }
 
-template <class L>
-void AvlTree<L>::rotate(AvlNode<L> * & tree)
+
+void AvlTreeStack::rotate(AvlNode<long> * & tree)
 {
 	if (!tree)
 		return;
@@ -125,10 +125,10 @@ void AvlTree<L>::rotate(AvlNode<L> * & tree)
 	if (tree->holes < 0)
 		return;
 
-	AvlNode<L> * n1 = tree->left;
-	AvlNode<L> * n2 = tree->right;
+	AvlNode<long> * n1 = tree->left;
+	AvlNode<long> * n2 = tree->right;
 
-	if (n2 && AvlNode<L>::getHeight(n1) < AvlNode<L>::getHeight(n2)) {
+	if (n2 && AvlNode<long>::getHeight(n1) < AvlNode<long>::getHeight(n2)) {
 		tree->right = n2->left;
 		tree->updateHoles();
 		tree->updateHeight();
@@ -139,7 +139,7 @@ void AvlTree<L>::rotate(AvlNode<L> * & tree)
 
 		tree = n2;
 	}
-	else if (n1 && AvlNode<L>::getHeight(n1) > AvlNode<L>::getHeight(n2)) {
+	else if (n1 && AvlNode<long>::getHeight(n1) > AvlNode<long>::getHeight(n2)) {
 		tree->left = n1->right;
 		tree->updateHoles();
 		tree->updateHeight();
@@ -152,8 +152,8 @@ void AvlTree<L>::rotate(AvlNode<L> * & tree)
 	}
 }
 
-template <class L>
-void AvlTree<L>::doubleRotate(AvlNode<L> * & tree)
+
+void AvlTreeStack::doubleRotate(AvlNode<long> * & tree)
 {
 	if (!tree)
 		return;
@@ -161,10 +161,10 @@ void AvlTree<L>::doubleRotate(AvlNode<L> * & tree)
 	if (tree->holes < 0)
 		return;
 
-	AvlNode<L> * & n1 = tree->left;
-	AvlNode<L> * & n2 = tree->right;
+	AvlNode<long> * & n1 = tree->left;
+	AvlNode<long> * & n2 = tree->right;
 
-	if (AvlNode<L>::getHeight(n1) < AvlNode<L>::getHeight(n2))
+	if (AvlNode<long>::getHeight(n1) < AvlNode<long>::getHeight(n2))
 		rotate(n2);
 	else
 		rotate(n1);
@@ -172,23 +172,23 @@ void AvlTree<L>::doubleRotate(AvlNode<L> * & tree)
 	rotate(tree);
 }
 
-template <class L>
-void AvlTree<L>::balance(AvlNode<L> * & tree)
+
+void AvlTreeStack::balance(AvlNode<long> * & tree)
 {
 	if (!tree)
 		return;
 
-	AvlNode<L> * & n1 = tree->left;
-	AvlNode<L> * & n2 = tree->right;
-	int err = AvlNode<L>::getHeight(n1) - AvlNode<L>::getHeight(n2);
+	AvlNode<long> * & n1 = tree->left;
+	AvlNode<long> * & n2 = tree->right;
+	int err = AvlNode<long>::getHeight(n1) - AvlNode<long>::getHeight(n2);
 	if (err > 1) {
-		if (AvlNode<L>::getHeight(n1->left) >= AvlNode<L>::getHeight(n1->right))
+		if (AvlNode<long>::getHeight(n1->left) >= AvlNode<long>::getHeight(n1->right))
 			rotate(tree);
 		else
 			doubleRotate(tree);
 	}
 	else if (err < -1) {
-		if (AvlNode<L>::getHeight(n2->left) <= AvlNode<L>::getHeight(n2->right))
+		if (AvlNode<long>::getHeight(n2->left) <= AvlNode<long>::getHeight(n2->right))
 			rotate(tree);
 		else
 			doubleRotate(tree);
@@ -205,7 +205,6 @@ Reader::Reader(std::string _path) {
 	}
 
 	std::string temp;
-	index = 0;
 	bool root = true;
 
 	while (std::getline(file, line)) {
@@ -217,37 +216,33 @@ Reader::Reader(std::string _path) {
 		/* check a valid address */
 		if (!addr)
 			continue;
-
-		long & value = addrMap[addr];
-
-		++index;
-
-		/* value is LONG_MAX under cold miss */
-		if (!value) {
-			value = index;
-			continue;
-		}
-
-		/* update b of last reference */
-		if (value < index) {
-			if (root) {
-				tree.setRoot(value);
-				root = false;
-			}
-			else {
-				tree.insert(value);
-				std::cout << "distance is " << index - value - tree.dist << std::endl;
-			}
-		}
-
-		value = index;
+		//std::cout << std::hex << addr << std::endl;
+		
+		/* call the methods to calculate stack distances */
+		//listStack.calStackDist(addr);
+		avlTreeStack.calStackDist(addr);
 	}
+
+	//listStack.print("E:\\ShareShen\\gem5-origin\\m5out-se-x86\\perlbench.txt");
+	avlTreeStack.print("E:\\ShareShen\\gem5-origin\\m5out-se-x86\\perlbench-avl.txt");
 }
 
 int main()
 {
+	/*AvlTreeStack avlTreeStack;
+	avlTreeStack.calStackDist((uint64_t)0x80005000);
+	avlTreeStack.calStackDist((uint64_t)0x80004000);
+	avlTreeStack.calStackDist((uint64_t)0x80005000);
+	avlTreeStack.calStackDist((uint64_t)0x80004000);
+	
+	ListStack listStack;
+	listStack.calStackDist((uint64_t)0x80005000);
+	listStack.calStackDist((uint64_t)0x80004000);
+	listStack.calStackDist((uint64_t)0x80005000);
+	listStack.calStackDist((uint64_t)0x80004000);
+	listStack.print("E:\\ShareShen\\gem5-origin\\m5out-se-x86\\perlbench.txt");*/
 
-	Reader reader("E:\\ShareShen\\gem5-origin\\statistics-results\\traceFile.txt");
+	Reader reader("E:\\ShareShen\\gem5-origin\\m5out-se-x86\\traceFile-perlbench-l1d32k2assoc.txt");
 
 	return 0;
 }
