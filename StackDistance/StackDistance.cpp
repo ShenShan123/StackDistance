@@ -209,10 +209,14 @@ Reader::Reader(std::string _path) {
 
 	while (std::getline(file, line)) {
 		std::stringstream lineStream(line);
-		uint64_t addr;
+		uint64_t paddr;
+		uint64_t vaddr;
 		lineStream >> temp;
-		lineStream >> std::hex >> addr;
+		lineStream >> std::hex >> paddr;
+		lineStream >> temp;
+		lineStream >> std::hex >> vaddr;
 
+		uint64_t addr = vaddr;
 		/* check a valid address */
 		if (!addr)
 			continue;
@@ -220,29 +224,20 @@ Reader::Reader(std::string _path) {
 		
 		/* call the methods to calculate stack distances */
 		//listStack.calStackDist(addr);
+		uint64_t mask = 63;
+		addr = addr & (~mask);
 		avlTreeStack.calStackDist(addr);
 	}
 
 	//listStack.print("E:\\ShareShen\\gem5-origin\\m5out-se-x86\\perlbench.txt");
-	avlTreeStack.print("E:\\ShareShen\\gem5-origin\\m5out-se-x86\\perlbench-avl.txt");
+	avlTreeStack.print("E:\\ShareShen\\gem5-origin\\m5out-x86\\perlbench-avl.txt");
 }
 
 int main()
 {
-	/*AvlTreeStack avlTreeStack;
-	avlTreeStack.calStackDist((uint64_t)0x80005000);
-	avlTreeStack.calStackDist((uint64_t)0x80004000);
-	avlTreeStack.calStackDist((uint64_t)0x80005000);
-	avlTreeStack.calStackDist((uint64_t)0x80004000);
-	
-	ListStack listStack;
-	listStack.calStackDist((uint64_t)0x80005000);
-	listStack.calStackDist((uint64_t)0x80004000);
-	listStack.calStackDist((uint64_t)0x80005000);
-	listStack.calStackDist((uint64_t)0x80004000);
-	listStack.print("E:\\ShareShen\\gem5-origin\\m5out-se-x86\\perlbench.txt");*/
 
-	Reader reader("E:\\ShareShen\\gem5-origin\\m5out-se-x86\\traceFile-perlbench-l1d32k2assoc.txt");
+	Reader reader("E:\\ShareShen\\gem5-origin\\m5out-se-x86\\requtTraceFile-perlbench.txt");
+
 
 	return 0;
 }

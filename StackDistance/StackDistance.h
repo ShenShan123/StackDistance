@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <assert.h>
 #include <iostream>
+#include <cmath>
 
 #include <unordered_map>
 
@@ -16,6 +17,7 @@ template <class U>
 class Histogram
 {
 	std::map<U, int> bins;
+	std::vector<double> binsVec;
 
 public:
 	Histogram() {};
@@ -31,19 +33,75 @@ public:
 			++bins[x];
 	}
 
+	bool intoVector()
+	{
+		std::map<U, int>::iterator it = bins.begin();
+
+		for (U i = 0; i <= MISS_BAR; ++i) {
+			/* we keep 0 value bars */
+			if (it->first != i)
+				binsVec.push_back(0);
+			else {
+				binsVec.push_back(it->second);
+				++it;
+			}
+		}
+
+		return binsVec.size() == MISS_BAR + 1;
+	}
+
 	void print(std::ofstream * & f)
 	{
-		std::map<int, int>::iterator it;
+		for (int i = 1; i < binsVec.size(); ++i) {
+			/* do not print zero value bins */
+			if (!binsVec[i]) continue;
 
-		for (it = bins.begin(); it != bins.end(); ++it) {
-			*f << "dist" << it->first << "\t\t";
-			*f << it->second << std::endl;
+			*f << "dist" << i << "\t\t" << binsVec[i] << std::endl;
 		}
 	}
 
-	void changeAssoc()
-	{
+	double combinations(int m, int n) {
+		if (m < 0 || m > n) {
+			return 0;
+		}
 
+		double iComb = 1;
+		int i = 0;
+
+		while (i < m) {
+			++i;
+			iComb *= n - i + 1;
+			iComb /= i;
+		}
+
+		return iComb;
+	}
+
+	void changeAssoc(int assoc, int numBlk)
+	{
+		/* p is a probability of mapping to the same set */
+		double p = (double) 1 / (numBlk / assoc);
+		assert(binsVec[MISS_BAR] && binsVec[1]);
+
+		/* transformation of the first bar */
+		//double lastBarAddition = binsVec[1] * (1 - p);
+		//binsVec[1] *= p;
+
+		/* transformation of each bar */
+		for (int i = 2; i < binsVec.size(); ++i) {
+			if (!binsVec[i]) continue;
+			/* each bar j before the current, need to be added,
+			   binominal distribution */
+			for (int j = i - 1; j > 0 ; --j) {
+				binsVec[j] += binsVec[i] * combinations(j - 1, i - 1) * 
+					 std::pow(p, j - 1) * std::pow(1 - p, i - j);
+			}
+			/* update current bar */
+			binsVec[i] *= pow(p, i - 1);
+		}
+
+		/* transformation of the last bar */
+		//binsVec[MISS_BAR] += lastBarAddition;
 	}
 };
 
@@ -194,6 +252,10 @@ public:
 	void print(std::string fname)
 	{
 		std::ofstream * file = new std::ofstream(fname);
+
+		hist.intoVector();
+		hist.changeAssoc(256, 32 * 1024 / 64);
+
 		hist.print(file);
 		file->close();
 		delete file;
