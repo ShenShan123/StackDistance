@@ -13,14 +13,53 @@
 
 #define MISS_BAR 513
 
-template <class U>
+template <class U, class T>
 class Histogram
 {
-	std::map<U, int> bins;
+	std::map<U, T> bins;
 	std::vector<double> binsVec;
+	std::vector<double> setDistr;
+	std::vector<double> transBins;
 
 public:
 	Histogram() {};
+
+	void recordSetDistr(std::string & _path)
+	{
+		std::ifstream file;
+		file.open(_path, std::ios::in);
+
+		if (file.fail()) {
+			return;
+		}
+
+		std::string line;
+		std::string temp;
+		int samples;
+		int numSamples = 0;
+		int setIdx = -1;
+		int i = -1;
+
+		while (std::getline(file, line)) {
+			std::stringstream lineStream(line);
+			lineStream >> temp;
+			std::string idxStr = temp.substr(28);
+			if (idxStr == "samples") {
+				lineStream >> numSamples;
+			}
+			else {
+				int setIdx = std::stoi(idxStr);
+				lineStream >> samples;
+				if (setIdx == i)
+					setDistr.push_back((double)samples / numSamples);
+				else
+					setDistr.push_back(0);
+			}
+			++i;
+		}
+
+		file.close();
+	}
 
 	~Histogram() {};
 
@@ -35,28 +74,33 @@ public:
 
 	bool intoVector()
 	{
-		std::map<U, int>::iterator it = bins.begin();
+		std::map<U, T>::iterator it = bins.begin();
+		std::map<U, T>::iterator itLast = bins.end();
+		--itLast;
+		assert(itLast->first == MISS_BAR);
 
-		for (U i = 0; i <= MISS_BAR; ++i) {
+		for (U i = 0; i <= itLast->first; ++i) {
 			/* we keep 0 value bars */
 			if (it->first != i)
 				binsVec.push_back(0);
 			else {
-				binsVec.push_back(it->second);
+				binsVec.push_back((double)it->second);
 				++it;
 			}
+			/* initialize transBins */
+			transBins.push_back(0);
 		}
 
 		return binsVec.size() == MISS_BAR + 1;
 	}
 
-	void print(std::ofstream * & f)
+	void print(std::ofstream * & file)
 	{
 		for (int i = 1; i < binsVec.size(); ++i) {
 			/* do not print zero value bins */
-			if (!binsVec[i]) continue;
+			if (!transBins[i]) continue;
 
-			*f << "dist" << i << "\t\t" << binsVec[i] << std::endl;
+			*file << "dist" << i << "\t\t" << transBins[i] << std::endl;
 		}
 	}
 
@@ -77,31 +121,30 @@ public:
 		return iComb;
 	}
 
-	void changeAssoc(int assoc, int numBlk)
+	void changeAssoc()
 	{
-		/* p is a probability of mapping to the same set */
-		double p = (double) 1 / (numBlk / assoc);
 		assert(binsVec[MISS_BAR] && binsVec[1]);
+		
+		/* calculate the histogram for each set */
+		for (int s = 0; s < setDistr.size(); ++s) {
+			/* p is a probability of mapping to a specific set */
+			double & p = setDistr[s];
 
-		/* transformation of the first bar */
-		//double lastBarAddition = binsVec[1] * (1 - p);
-		//binsVec[1] *= p;
-
-		/* transformation of each bar */
-		for (int i = 2; i < binsVec.size(); ++i) {
-			if (!binsVec[i]) continue;
-			/* each bar j before the current, need to be added,
-			   binominal distribution */
-			for (int j = i - 1; j > 0 ; --j) {
-				binsVec[j] += binsVec[i] * combinations(j - 1, i - 1) * 
-					 std::pow(p, j - 1) * std::pow(1 - p, i - j);
+			/* transition of each bar */
+			for (int i = 2; i < binsVec.size(); ++i) {
+				if (!binsVec[i]) continue;
+				/* each bar j before the current, need to be added,
+				   it's a binominal distribution */
+				for (int j = i - 1; j > 0; --j) {
+					transBins[j] += p * binsVec[i] * combinations(j - 1, i - 1) *
+						std::pow(p, j - 1) * std::pow(1 - p, i - j);
+				}
+				/* update current bar */
+				transBins[i] += binsVec[i] * std::pow(p, i);
 			}
-			/* update current bar */
-			binsVec[i] *= pow(p, i - 1);
 		}
-
-		/* transformation of the last bar */
-		//binsVec[MISS_BAR] += lastBarAddition;
+		/* for the original first bar, no need to change */
+		transBins[1] += binsVec[1];
 	}
 };
 
@@ -164,7 +207,7 @@ class AvlTreeStack
 {
 	AvlNode<long> * root;
 	bool isRoot;
-	Histogram<int> hist;
+	Histogram<int, int> hist;
 	std::map <uint64_t, long> addrMap;
 	long index;
 	int dist;
@@ -182,6 +225,11 @@ public:
 	void setRoot(long & v)
 	{
 		root = new AvlNode<long>(v);
+	}
+
+	void setDistr(std::string _path)
+	{
+		hist.recordSetDistr(_path);
 	}
 
 	~AvlTreeStack() { destroy(root); }
@@ -249,12 +297,12 @@ public:
 		value = index;
 	}
 
-	void print(std::string fname)
+	void print(std::string & _path)
 	{
-		std::ofstream * file = new std::ofstream(fname);
+		std::ofstream * file = new std::ofstream(_path);
 
-		hist.intoVector();
-		hist.changeAssoc(256, 32 * 1024 / 64);
+		if (hist.intoVector())
+			hist.changeAssoc();
 
 		hist.print(file);
 		file->close();
@@ -266,7 +314,7 @@ class ListStack
 {
 	std::list<uint64_t> addrList;
 
-	Histogram<int> hist;
+	Histogram<int, int> hist;
 
 public:
 	ListStack() {};
@@ -321,5 +369,5 @@ private:
 	ListStack listStack;
 
 public:
-	Reader(std::string _path);
+	Reader(std::string _path, std::string _pathout, std::string _pathset);
 };

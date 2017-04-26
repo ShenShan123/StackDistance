@@ -198,7 +198,7 @@ void AvlTreeStack::balance(AvlNode<long> * & tree)
 	tree->updateHoles();
 }
 
-Reader::Reader(std::string _path) {
+Reader::Reader(std::string _path, std::string _pathout, std::string _pathset) {
 	file.open(_path, std::ios::in);
 	if (file.fail()) {
 		return;
@@ -220,7 +220,6 @@ Reader::Reader(std::string _path) {
 		/* check a valid address */
 		if (!addr)
 			continue;
-		//std::cout << std::hex << addr << std::endl;
 		
 		/* call the methods to calculate stack distances */
 		//listStack.calStackDist(addr);
@@ -228,15 +227,17 @@ Reader::Reader(std::string _path) {
 		addr = addr & (~mask);
 		avlTreeStack.calStackDist(addr);
 	}
-
+	avlTreeStack.setDistr(_pathset);
 	//listStack.print("E:\\ShareShen\\gem5-origin\\m5out-se-x86\\perlbench.txt");
-	avlTreeStack.print("E:\\ShareShen\\gem5-origin\\m5out-x86\\perlbench-avl.txt");
+	avlTreeStack.print(_pathout);
 }
 
 int main()
 {
-
-	Reader reader("E:\\ShareShen\\gem5-origin\\m5out-se-x86\\requtTraceFile-perlbench.txt");
+	//Histogram<int, double> hist("E:\\ShareShen\\gem5-origin\\m5out-se-x86\\perlbench-l1d32k256assoc-set-distribution.txt");
+	Reader reader("E:\\ShareShen\\gem5-origin\\m5out-se-x86\\requtTraceFile-perlbench.txt", \
+		"E:\\ShareShen\\gem5-origin\\m5out-se-x86\\perlbench-avl-4assoc.txt", \
+		"E:\\ShareShen\\gem5-origin\\m5out-se-x86\\perlbench-l1d32k4assoc-set-distribution.txt");
 
 
 	return 0;
