@@ -4,27 +4,24 @@
 #include <sstream>
 #include <map>
 #include <vector>
+#include <list>
 #include <algorithm>
 #include <assert.h>
 #include <iostream>
 #include <cmath>
 
-#include <unordered_map>
-
 #define MISS_BAR 513
 
-template <class U, class T>
-class Histogram
+class IntervalSetDistribution
 {
-	std::map<U, T> bins;
-	std::vector<double> binsVec;
-	std::vector<double> setDistr;
-	std::vector<double> transBins;
-
 public:
-	Histogram() {};
+	/* setDistr are set distributions of all interval */
+	std::vector<std::vector<double>> intSetDistr;
+	IntervalSetDistribution() {};
 
-	void recordSetDistr(std::string & _path)
+	~IntervalSetDistribution() {};
+
+	void recordSetDistr(const std::string _path)
 	{
 		std::ifstream file;
 		file.open(_path, std::ios::in);
@@ -38,73 +35,99 @@ public:
 		int samples;
 		int numSamples = 0;
 		int setIdx = -1;
-		int i = -1;
+		int i;
+		int j = -1;
 
 		while (std::getline(file, line)) {
 			std::stringstream lineStream(line);
 			lineStream >> temp;
 			std::string idxStr = temp.substr(28);
+			/* this is a set distribution of a new window */
 			if (idxStr == "samples") {
+				++j;
+				i = -1;
 				lineStream >> numSamples;
+				std::vector<double> newSetDistr;
+				intSetDistr.push_back(newSetDistr);
 			}
 			else {
+				++i;
 				int setIdx = std::stoi(idxStr);
 				lineStream >> samples;
 				if (setIdx == i)
-					setDistr.push_back((double)samples / numSamples);
+					intSetDistr[j].push_back((double)samples / numSamples);
 				else
-					setDistr.push_back(0);
+					intSetDistr[j].push_back(0);
 			}
-			++i;
 		}
 
 		file.close();
 	}
+};
+
+template <class U, class T>
+class Histogram
+{
+	std::map<U, T> origBins;
+	std::vector<double> bins;
+
+public:
+	std::vector<double> transBins;
+
+	Histogram() {};
 
 	~Histogram() {};
 
+	void clear()
+	{
+		origBins.clear();
+		bins.clear();
+		transBins.clear();
+	}
+
+	/* do sample, record every time if the distance is x */
 	void sample(U x)
 	{
-		if (!bins[x]) {
-			bins[x] = 1;
+		if (!origBins[x]) {
+			origBins[x] = 1;
 		}
 		else
-			++bins[x];
+			++origBins[x];
 	}
 
 	bool intoVector()
 	{
-		std::map<U, T>::iterator it = bins.begin();
-		std::map<U, T>::iterator itLast = bins.end();
+		std::map<U, T>::iterator it = origBins.begin();
+		std::map<U, T>::iterator itLast = origBins.end();
 		--itLast;
 		assert(itLast->first == MISS_BAR);
 
 		for (U i = 0; i <= itLast->first; ++i) {
 			/* we keep 0 value bars */
 			if (it->first != i)
-				binsVec.push_back(0);
+				bins.push_back(0);
 			else {
-				binsVec.push_back((double)it->second);
+				bins.push_back((double)it->second);
 				++it;
 			}
 			/* initialize transBins */
 			transBins.push_back(0);
 		}
 
-		return binsVec.size() == MISS_BAR + 1;
+		return bins.size() == MISS_BAR + 1;
 	}
 
 	void print(std::ofstream * & file)
 	{
-		for (int i = 1; i < binsVec.size(); ++i) {
-			/* do not print zero value bins */
+		for (int i = 1; i < bins.size(); ++i) {
+			/* do not print zero value origBins */
 			if (!transBins[i]) continue;
 
 			*file << "dist" << i << "\t\t" << transBins[i] << std::endl;
 		}
 	}
 
-	double combinations(int m, int n) {
+	double combinations(const int m, const int n) {
 		if (m < 0 || m > n) {
 			return 0;
 		}
@@ -121,30 +144,30 @@ public:
 		return iComb;
 	}
 
-	void changeAssoc()
+	void changeAssoc(const std::vector<double> & setDistr)
 	{
-		assert(binsVec[MISS_BAR] && binsVec[1]);
+		assert(bins[MISS_BAR] && bins[1]);
 		
 		/* calculate the histogram for each set */
 		for (int s = 0; s < setDistr.size(); ++s) {
 			/* p is a probability of mapping to a specific set */
-			double & p = setDistr[s];
+			const double & p = setDistr[s];
 
 			/* transition of each bar */
-			for (int i = 2; i < binsVec.size(); ++i) {
-				if (!binsVec[i]) continue;
+			for (int i = 2; i < bins.size(); ++i) {
+				if (!bins[i]) continue;
 				/* each bar j before the current, need to be added,
 				   it's a binominal distribution */
 				for (int j = i - 1; j > 0; --j) {
-					transBins[j] += p * binsVec[i] * combinations(j - 1, i - 1) *
+					transBins[j] += p * bins[i] * combinations(j - 1, i - 1) *
 						std::pow(p, j - 1) * std::pow(1 - p, i - j);
 				}
 				/* update current bar */
-				transBins[i] += binsVec[i] * std::pow(p, i);
+				transBins[i] += bins[i] * std::pow(p, i);
 			}
 		}
 		/* for the original first bar, no need to change */
-		transBins[1] += binsVec[1];
+		transBins[1] += bins[1];
 	}
 };
 
@@ -206,33 +229,35 @@ public:
 class AvlTreeStack
 {
 	AvlNode<long> * root;
-	bool isRoot;
-	Histogram<int, int> hist;
 	std::map <uint64_t, long> addrMap;
 	long index;
 	int dist;
 
 public:
+	Histogram<int, int> hist;
 
-	AvlTreeStack(long & v) : dist(0)
+	AvlTreeStack(long & v) : dist(0), index(0)
 	{
 		root = new AvlNode<long>(v);
-		isRoot = true;
 	}
 
-	AvlTreeStack() : root(nullptr), dist(0), isRoot(false) {};
+	AvlTreeStack() : root(nullptr), dist(0), index(0) {};
 
 	void setRoot(long & v)
 	{
 		root = new AvlNode<long>(v);
 	}
 
-	void setDistr(std::string _path)
-	{
-		hist.recordSetDistr(_path);
-	}
-
 	~AvlTreeStack() { destroy(root); }
+
+	void clear() 
+	{
+		destroy(root);
+		addrMap.clear();
+		hist.clear();
+		index = 0;
+		dist = 0;
+	}
 
 	void destroy(AvlNode<long> * & tree);
 
@@ -267,9 +292,9 @@ public:
 
 	void calStackDist(uint64_t addr)
 	{
-		long & value = addrMap[addr];
-
 		++index;
+
+		long & value = addrMap[addr];
 
 		/* value is 0 under cold miss */
 		if (!value) {
@@ -280,33 +305,22 @@ public:
 
 		/* update b of last reference */
 		if (value < index) {
-			/* set a root of the tree */
-			if (isRoot) {
-				setRoot(value);
-				isRoot = false;
-			}
-			else {
-				/* insert a hole */
-				insert(value);
-				int stackDist = index - value - dist;
-				stackDist = stackDist >= MISS_BAR ? MISS_BAR : stackDist;
-				hist.sample(stackDist);
-			}
+			/* insert a hole */
+			insert(value);
+			int stackDist = index - value - dist;
+			stackDist = stackDist >= MISS_BAR ? MISS_BAR : stackDist;
+			hist.sample(stackDist);
 		}
 
 		value = index;
 	}
 
-	void print(std::string & _path)
+	void transStack(const std::vector<double> & setDistr)
 	{
-		std::ofstream * file = new std::ofstream(_path);
-
 		if (hist.intoVector())
-			hist.changeAssoc();
-
-		hist.print(file);
-		file->close();
-		delete file;
+			hist.changeAssoc(setDistr);
+		else
+			std::cout << "fail to intoVector()!!" << std::endl;
 	}
 };
 
@@ -364,10 +378,14 @@ class Reader
 {
 private:
 	std::ifstream file;
+	std::ofstream outFile;
 	std::string line;
-	AvlTreeStack avlTreeStack;
+	std::vector<Histogram<int, int>> intHists;
 	ListStack listStack;
+	IntervalSetDistribution intSetDistr;
 
 public:
-	Reader(std::string _path, std::string _pathout, std::string _pathset);
+	Reader(const std::string _path, const std::string _pathout, const std::string _pathset);
+
+	void sumHists();
 };

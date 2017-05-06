@@ -18,7 +18,7 @@ void AvlTreeStack::destroy(AvlNode<long> * & tree)
 
 
 void AvlTreeStack::insert(AvlNode<long> * & tree, long & v) {
-	if (!tree) {
+	if (tree == nullptr) {
 		tree = new AvlNode<long>(v);
 		return;
 	}
@@ -198,7 +198,10 @@ void AvlTreeStack::balance(AvlNode<long> * & tree)
 	tree->updateHoles();
 }
 
-Reader::Reader(std::string _path, std::string _pathout, std::string _pathset) {
+Reader::Reader(const std::string _path, const std::string _pathout, const std::string _pathset) {
+	/* read set distributions of all intervals */
+	intSetDistr.recordSetDistr(_pathset);
+
 	file.open(_path, std::ios::in);
 	if (file.fail()) {
 		return;
@@ -206,17 +209,37 @@ Reader::Reader(std::string _path, std::string _pathout, std::string _pathset) {
 
 	std::string temp;
 	bool root = true;
+	AvlTreeStack * avlTreeStack = nullptr;
+	int it = 0;
 
 	while (std::getline(file, line)) {
 		std::stringstream lineStream(line);
 		uint64_t paddr;
 		uint64_t vaddr;
 		lineStream >> temp;
+		/* a new interval starts */
+		if (temp == "interval") {
+			/* if there is an old interval, 
+			   we transit the histogram and push it into intHists. */
+			if (avlTreeStack != nullptr) {
+				avlTreeStack->transStack(intSetDistr.intSetDistr[it]);
+				intHists.push_back(avlTreeStack->hist);
+				++it;
+				delete avlTreeStack;
+			}
+
+			avlTreeStack = new AvlTreeStack;
+			std::cout << "interval " << it << std::endl;
+			continue;
+		}
+
+		assert(avlTreeStack != nullptr);
+
 		lineStream >> std::hex >> paddr;
 		lineStream >> temp;
 		lineStream >> std::hex >> vaddr;
 
-		uint64_t addr = vaddr;
+		uint64_t addr = paddr;
 		/* check a valid address */
 		if (!addr)
 			continue;
@@ -225,20 +248,46 @@ Reader::Reader(std::string _path, std::string _pathout, std::string _pathset) {
 		//listStack.calStackDist(addr);
 		uint64_t mask = 63;
 		addr = addr & (~mask);
-		avlTreeStack.calStackDist(addr);
+		avlTreeStack->calStackDist(addr);
 	}
-	avlTreeStack.setDistr(_pathset);
+	/* the last interval */
+	avlTreeStack->transStack(intSetDistr.intSetDistr[it]);
+	intHists.push_back(avlTreeStack->hist);
+	delete avlTreeStack;
+	
+	outFile.open(_pathout, std::ios::out);
+	if (outFile.fail())
+		return;
+	
+	sumHists();
 	//listStack.print("E:\\ShareShen\\gem5-origin\\m5out-se-x86\\perlbench.txt");
-	avlTreeStack.print(_pathout);
+	file.close();
+	outFile.close();
+}
+
+void Reader::sumHists()
+{
+	std::vector<double> sumBins;
+	for (int b = 0; b < intHists[0].transBins.size(); ++b) {
+		double temp = 0.0;
+
+		for (int i = 0; i < intHists.size(); ++i)
+			temp += intHists[i].transBins[b];
+
+		sumBins.push_back(temp);
+		if (!temp) continue;
+		outFile << "dist::" << b << "\t" << temp << std::endl;
+	}
 }
 
 int main()
 {
-	//Histogram<int, double> hist("E:\\ShareShen\\gem5-origin\\m5out-se-x86\\perlbench-l1d32k256assoc-set-distribution.txt");
-	Reader reader("E:\\ShareShen\\gem5-origin\\m5out-se-x86\\requtTraceFile-perlbench.txt", \
-		"E:\\ShareShen\\gem5-origin\\m5out-se-x86\\perlbench-avl-4assoc.txt", \
-		"E:\\ShareShen\\gem5-origin\\m5out-se-x86\\perlbench-l1d32k4assoc-set-distribution.txt");
+	//IntervalSetDistribution intSetDistr;
+	//intSetDistr.recordSetDistr("E:\\ShareShen\\gem5-stable\\m5out-se-x86\\perlbench-32k4assoc-setDistr.txt");
 
+	Reader reader("E:\\ShareShen\\gem5-stable\\m5out-se-x86\\requtTraceFile-perlbench.txt", \
+		"E:\\ShareShen\\gem5-stable\\m5out-se-x86\\perlbench-avl-4assoc.txt", \
+		"E:\\ShareShen\\gem5-stable\\m5out-se-x86\\perlbench-32k4assoc-setDistr.txt");
 
 	return 0;
 }
