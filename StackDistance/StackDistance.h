@@ -8,10 +8,14 @@
 #include <assert.h>
 #include <iostream>
 #include <cmath>
+#include <stdexcept>
+#include <list>
+#include <float.h>
+#define MISS_BAR 1025
 
-#include <unordered_map>
+inline double power(const double base,const int index);
 
-#define MISS_BAR 513
+inline double biDistribution(const int m, const int n, const double p);
 
 template <class U, class T>
 class Histogram
@@ -24,128 +28,15 @@ class Histogram
 public:
 	Histogram() {};
 
-	void recordSetDistr(std::string & _path)
-	{
-		std::ifstream file;
-		file.open(_path, std::ios::in);
-
-		if (file.fail()) {
-			return;
-		}
-
-		std::string line;
-		std::string temp;
-		int samples;
-		int numSamples = 0;
-		int setIdx = -1;
-		int i = -1;
-
-		while (std::getline(file, line)) {
-			std::stringstream lineStream(line);
-			lineStream >> temp;
-			std::string idxStr = temp.substr(28);
-			if (idxStr == "samples") {
-				lineStream >> numSamples;
-			}
-			else {
-				int setIdx = std::stoi(idxStr);
-				lineStream >> samples;
-				if (setIdx == i)
-					setDistr.push_back((double)samples / numSamples);
-				else
-					setDistr.push_back(0);
-			}
-			++i;
-		}
-
-		file.close();
-	}
-
 	~Histogram() {};
 
-	void sample(U x)
-	{
-		if (!bins[x]) {
-			bins[x] = 1;
-		}
-		else
-			++bins[x];
-	}
+	void sample(U x);
 
-	bool intoVector()
-	{
-		std::map<U, T>::iterator it = bins.begin();
-		std::map<U, T>::iterator itLast = bins.end();
-		--itLast;
-		assert(itLast->first == MISS_BAR);
+	bool intoVector();
 
-		for (U i = 0; i <= itLast->first; ++i) {
-			/* we keep 0 value bars */
-			if (it->first != i)
-				binsVec.push_back(0);
-			else {
-				binsVec.push_back((double)it->second);
-				++it;
-			}
-			/* initialize transBins */
-			transBins.push_back(0);
-		}
+	void changeAssoc(const int & cap, const int & blk, const int & assoc);
 
-		return binsVec.size() == MISS_BAR + 1;
-	}
-
-	void print(std::ofstream * & file)
-	{
-		for (int i = 1; i < binsVec.size(); ++i) {
-			/* do not print zero value bins */
-			if (!transBins[i]) continue;
-
-			*file << "dist" << i << "\t\t" << transBins[i] << std::endl;
-		}
-	}
-
-	double combinations(int m, int n) {
-		if (m < 0 || m > n) {
-			return 0;
-		}
-
-		double iComb = 1;
-		int i = 0;
-
-		while (i < m) {
-			++i;
-			iComb *= n - i + 1;
-			iComb /= i;
-		}
-
-		return iComb;
-	}
-
-	void changeAssoc()
-	{
-		assert(binsVec[MISS_BAR] && binsVec[1]);
-		
-		/* calculate the histogram for each set */
-		for (int s = 0; s < setDistr.size(); ++s) {
-			/* p is a probability of mapping to a specific set */
-			double & p = setDistr[s];
-
-			/* transition of each bar */
-			for (int i = 2; i < binsVec.size(); ++i) {
-				if (!binsVec[i]) continue;
-				/* each bar j before the current, need to be added,
-				   it's a binominal distribution */
-				for (int j = i - 1; j > 0; --j) {
-					transBins[j] += p * binsVec[i] * combinations(j - 1, i - 1) *
-						std::pow(p, j - 1) * std::pow(1 - p, i - j);
-				}
-				/* update current bar */
-				transBins[i] += binsVec[i] * std::pow(p, i);
-			}
-		}
-		/* for the original first bar, no need to change */
-		transBins[1] += binsVec[1];
-	}
+	void print(std::ofstream & file);
 };
 
 template <class T>
@@ -207,12 +98,13 @@ class AvlTreeStack
 {
 	AvlNode<long> * root;
 	bool isRoot;
-	Histogram<int, int> hist;
 	std::map <uint64_t, long> addrMap;
 	long index;
 	int dist;
 
 public:
+	/* hist contains the stack distance distribution */
+	Histogram<int, int> hist;
 
 	AvlTreeStack(long & v) : dist(0)
 	{
@@ -221,16 +113,6 @@ public:
 	}
 
 	AvlTreeStack() : root(nullptr), dist(0), isRoot(false) {};
-
-	void setRoot(long & v)
-	{
-		root = new AvlNode<long>(v);
-	}
-
-	void setDistr(std::string _path)
-	{
-		hist.recordSetDistr(_path);
-	}
 
 	~AvlTreeStack() { destroy(root); }
 
@@ -265,49 +147,9 @@ public:
 
 	void balance(AvlNode<long> * & tree);
 
-	void calStackDist(uint64_t addr)
-	{
-		long & value = addrMap[addr];
+	void calStackDist(uint64_t addr);
 
-		++index;
-
-		/* value is 0 under cold miss */
-		if (!value) {
-			hist.sample(MISS_BAR);
-			value = index;
-			return;
-		}
-
-		/* update b of last reference */
-		if (value < index) {
-			/* set a root of the tree */
-			if (isRoot) {
-				setRoot(value);
-				isRoot = false;
-			}
-			else {
-				/* insert a hole */
-				insert(value);
-				int stackDist = index - value - dist;
-				stackDist = stackDist >= MISS_BAR ? MISS_BAR : stackDist;
-				hist.sample(stackDist);
-			}
-		}
-
-		value = index;
-	}
-
-	void print(std::string & _path)
-	{
-		std::ofstream * file = new std::ofstream(_path);
-
-		if (hist.intoVector())
-			hist.changeAssoc();
-
-		hist.print(file);
-		file->close();
-		delete file;
-	}
+	bool transHist(const int cap, const int blk, const int assoc);
 };
 
 class ListStack
@@ -350,24 +192,14 @@ public:
 		/* push new address to the head of the list */
 		addrList.push_front(addr);
 	};
-
-	void print(std::string fname)
-	{
-		std::ofstream * file = new std::ofstream(fname);
-		hist.print(file);
-		file->close();
-		delete file;
-	}
 };
 
 class Reader
 {
 private:
-	std::ifstream file;
-	std::string line;
 	AvlTreeStack avlTreeStack;
 	ListStack listStack;
 
 public:
-	Reader(std::string _path, std::string _pathout, std::string _pathset);
+	Reader(std::string _path, std::string _pathout);
 };
