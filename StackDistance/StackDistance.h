@@ -11,32 +11,73 @@
 #include <stdexcept>
 #include <list>
 #include <float.h>
-#define MISS_BAR 1025
+#define MISS_BAR 1024 * 64 + 1
 
 inline double power(const double base,const int index);
 
 inline double biDistribution(const int m, const int n, const double p);
 
-template <class U, class T>
+template <class B, class T>
 class Histogram
 {
-	std::map<U, T> bins;
-	std::vector<double> binsVec;
-	std::vector<double> setDistr;
-	std::vector<double> transBins;
+	std::vector<B> binsVec;
+	std::vector<T> transBins;
+	/* number of sampling */
+	B samples;
+	/* total number of miss references */
+	B misses;
+	/* miss rate */
+	double missRate;
 
 public:
-	Histogram() {};
+	Histogram() : misses(0), missRate(0.0), 
+		          binsVec(MISS_BAR + 1, 0), 
+		          transBins(MISS_BAR + 1, 0) {}
 
 	~Histogram() {};
 
-	void sample(U x);
+	void sample(B x);
 
-	bool intoVector();
+	//bool intoVector();
 
 	void changeAssoc(const int & cap, const int & blk, const int & assoc);
 
+	void transToStackDist()
+	{
+		std::vector<double> frac;
+		B temp = 0;
+		/* calculate the fraction of reuse distance
+		   is greater than i */
+		for (int i = 0; i < binsVec.size(); ++i) {
+			temp += binsVec[i];
+			frac.push_back((double)(samples - temp) / samples);
+		}
+
+		for (int i = 1; i < binsVec.size(); ++i) {
+			double sumFrac = 0.0;
+			for (int j = 1; j <= i; ++j)
+				sumFrac += frac[j];
+			transBins[(int)std::round(sumFrac)] += binsVec[i];
+		}
+		transBins[0] = binsVec[0];
+	}
+
 	void print(std::ofstream & file);
+
+	void calMissRate(const int & assoc)
+	{
+		for (int i = assoc; i < transBins.size(); ++i)
+			misses += transBins[i];
+		missRate = (double)misses / samples;
+	}
+
+	void calMissRate(const int & cap, const int & blk)
+	{
+		int blkNum = cap / blk;
+		for (int i = blkNum; i < transBins.size(); ++i)
+			misses += transBins[i];
+		missRate = (double)misses / samples;
+	}
 };
 
 template <class T>
@@ -104,7 +145,7 @@ class AvlTreeStack
 
 public:
 	/* hist contains the stack distance distribution */
-	Histogram<int, int> hist;
+	Histogram<int, double> hist;
 
 	AvlTreeStack(long & v) : dist(0)
 	{
@@ -149,49 +190,61 @@ public:
 
 	void calStackDist(uint64_t addr);
 
-	bool transHist(const int cap, const int blk, const int assoc);
+	void transHist(const int cap, const int blk, const int assoc);
 };
 
 class ListStack
 {
 	std::list<uint64_t> addrList;
 
-	Histogram<int, int> hist;
+	Histogram<int, double> hist;
 
 public:
 	ListStack() {};
 
 	~ListStack() {};
 
-	void calStackDist(uint64_t addr) 
+	void calStackDist(uint64_t addr);
+};
+
+class ReuseDist
+{
+	std::map<uint64_t, long> addrMap;
+	long index;
+
+public:
+	Histogram<int, int> hist;
+
+	ReuseDist() {};
+	~ReuseDist() {};
+
+	void calReuseDist(uint64_t addr)
 	{
-		std::list<uint64_t>::iterator it;
-		/* start counting the distance from 1 */
-		long distance = 1;
-		bool found = false;
+		long & value = addrMap[addr];
 
-		for (it = addrList.begin(); it != addrList.end(); ++it)
-		{
-			if (*it == addr) {
-				addrList.erase(it);
-				hist.sample(distance);
-				found = true;
-				break;
-			}
-			else
-				++distance;
-		}
+		++index;
 
-		/* cold miss */
-		if (!found)
+		/* value is 0 under cold miss */
+		if (!value) {
 			hist.sample(MISS_BAR);
-
-		if (addrList.size() >= MISS_BAR) {
-			addrList.pop_back();
+			value = index;
+			return;
 		}
-		/* push new address to the head of the list */
-		addrList.push_front(addr);
-	};
+
+		/* update b of last reference */
+		if (value < index) {
+			int reuseDist = index - value - 1;
+			reuseDist = reuseDist >= MISS_BAR ? MISS_BAR : reuseDist;
+			hist.sample(reuseDist);
+		}
+
+		value = index;
+	}
+
+	void transHist()
+	{
+		hist.transToStackDist();
+	}
 };
 
 class Reader
@@ -199,6 +252,7 @@ class Reader
 private:
 	AvlTreeStack avlTreeStack;
 	ListStack listStack;
+	ReuseDist reuseDist;
 
 public:
 	Reader(std::string _path, std::string _pathout);

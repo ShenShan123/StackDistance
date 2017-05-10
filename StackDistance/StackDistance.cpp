@@ -35,6 +35,9 @@ inline double biDistribution(const int m, const int n, const double p)
 			ans *= (n - i + 1) * p * np;
 			ans /= i;
 			++i;
+			/* keep off underflow_error */
+			if (ans <= DBL_MIN)
+				return 0.0;
 		}
 	else
 		while (i <= n - m) {
@@ -45,45 +48,50 @@ inline double biDistribution(const int m, const int n, const double p)
 			else
 				ans *= (1 - p);
 			++i;
+			/* keep off underflow_error */
+			if (ans <= DBL_MIN)
+				return 0.0;
 		}
 	return ans;
 }
 
-template <class U, class T>
-void Histogram<U, T>::sample(U x)
+template <class B, class T>
+void Histogram<B, T>::sample(B x)
 {
-	if (!bins[x]) {
-		bins[x] = 1;
+	if (!binsVec[x]) {
+		binsVec[x] = 1;
 	}
 	else
-		++bins[x];
+		++binsVec[x];
+	/* calculate the total num of sampling */
+	++samples;
 }
 
-template <class U, class T>
-bool Histogram<U, T>::intoVector()
-{
-	std::map<U, T>::iterator it = bins.begin();
-	std::map<U, T>::iterator itLast = bins.end();
-	--itLast;
-	assert(itLast->first == MISS_BAR);
+//template <class B, class T>
+//bool Histogram<B, T>::intoVector()
+//{
+//	std::map<B, T>::iterator it = bins.begin();
+//	std::map<B, T>::iterator itLast = bins.end();
+//	--itLast;
+//	assert(itLast->first == MISS_BAR);
+//
+//	for (B i = 0; i <= MISS_BAR; ++i) {
+//		/* we keep 0 value bars */
+//		if (it->first != i)
+//			binsVec.push_back(0);
+//		else {
+//			binsVec.push_back((double)it->second);
+//			++it;
+//		}
+//		/* initialize transBins */
+//		transBins.push_back(0);
+//	}
+//
+//	return binsVec.size() == MISS_BAR + 1;
+//}
 
-	for (U i = 0; i <= MISS_BAR; ++i) {
-		/* we keep 0 value bars */
-		if (it->first != i)
-			binsVec.push_back(0);
-		else {
-			binsVec.push_back((double)it->second);
-			++it;
-		}
-		/* initialize transBins */
-		transBins.push_back(0);
-	}
-
-	return binsVec.size() == MISS_BAR + 1;
-}
-
-template <class U, class T>
-void Histogram<U, T>::changeAssoc(const int & cap, const int & blk, const int & assoc)
+template <class B, class T>
+void Histogram<B, T>::changeAssoc(const int & cap, const int & blk, const int & assoc)
 {
 	assert(binsVec[MISS_BAR] && binsVec[1]);
 	int setNum = cap / (blk * assoc);
@@ -93,26 +101,29 @@ void Histogram<U, T>::changeAssoc(const int & cap, const int & blk, const int & 
 	/* calculate the histogram for each set */
 	for (int s = 0; s < setNum; ++s) {
 		/* transition of each bar */
-		for (int i = 2; i < binsVec.size(); ++i) {
+		for (int i = 1; i < binsVec.size(); ++i) {
 			if (!binsVec[i]) continue;
 			/* each bar j before the current, need to be added,
 			it's a binominal distribution */
-			for (int j = i - 1; j > 0; --j) {
-				double temp = 0.0;
-				transBins[j] += p * binsVec[i] * biDistribution(j - 1, i - 1, p);
+			for (int j = i - 1; j >= 0; --j) {
+				transBins[j] += p * binsVec[i] * biDistribution(j, i, p);
 			}
 			/* update current bar */
-			transBins[i] += binsVec[i] * power(p, i);
+			transBins[i] += p * binsVec[i] * power(p, i);
 		}
 	}
 	/* for the original first bar, no need to change */
-	transBins[1] += binsVec[1];
+	transBins[0] += binsVec[0];
 }
 
-template <class U, class T>
-void Histogram<U, T>::print(std::ofstream & file)
+template <class B, class T>
+void Histogram<B, T>::print(std::ofstream & file)
 {
-	for (int i = 1; i < transBins.size(); ++i) {
+	file << "total_samples" << "\t" << samples << std::endl;
+	file << "total_misses" << "\t" << misses << std::endl;
+	file << "miss_rate" << "\t" << missRate << std::endl;
+
+	for (int i = 0; i < transBins.size(); ++i) {
 		/* do not print zero value bins */
 		if (!transBins[i]) continue;
 		file << "dist" << i << "\t" << transBins[i] << std::endl;
@@ -329,7 +340,8 @@ void AvlTreeStack::calStackDist(uint64_t addr)
 	if (value < index) {
 		/* insert a hole */
 		insert(value);
-		int stackDist = index - value - dist;
+		int stackDist = index - value - dist - 1;
+		/* if the stack distance is large than MISS_BAR, the reference is definitely missed. */
 		stackDist = stackDist >= MISS_BAR ? MISS_BAR : stackDist;
 		hist.sample(stackDist);
 	}
@@ -337,13 +349,9 @@ void AvlTreeStack::calStackDist(uint64_t addr)
 	value = index;
 }
 
-bool AvlTreeStack::transHist(const int cap, const int blk, const int assoc)
+void AvlTreeStack::transHist(const int cap, const int blk, const int assoc)
 {
-	if (hist.intoVector())
-		hist.changeAssoc(cap, blk, assoc);
-	else
-		return false;
-	return true;
+	hist.changeAssoc(cap, blk, assoc);
 }
 
 Reader::Reader(std::string _path, std::string _pathout) {
@@ -384,24 +392,33 @@ Reader::Reader(std::string _path, std::string _pathout) {
 		//listStack.calStackDist(addr);
 		uint64_t mask = 63;
 		addr = addr & (~mask);
-		avlTreeStack.calStackDist(addr);
+		//avlTreeStack.calStackDist(addr);
+		reuseDist.calReuseDist(addr);
 	}
 	//listStack.print("E:\\ShareShen\\gem5-origin\\m5out-se-x86\\perlbench.txt");
 	std::cout << "transiting stack distances..." << std::endl;
 
-	bool trans = avlTreeStack.transHist(32*1024, 64, 8);
-	if (trans)
-		avlTreeStack.hist.print(fileOut);
-
+	int cap = 32 * 1024;
+	int blk = 64;
+	int assoc = 4;
+	//avlTreeStack.transHist(cap, blk, assoc);
+	//avlTreeStack.hist.calMissRate(assoc);
+	//avlTreeStack.hist.print(fileOut);
+	reuseDist.transHist();
+	reuseDist.hist.calMissRate(cap, blk);
 	file.close();
 	fileOut.close();
 }
 
 int main()
 {
+	//Histogram<int, double> hist;
+	//hist.sample(1);
+	//hist.sample(4);
+	//hist.sample(4);
 	//Histogram<int, double> hist("E:\\ShareShen\\gem5-origin\\m5out-se-x86\\perlbench-l1d32k256assoc-set-distribution.txt");
 	Reader reader("E:\\ShareShen\\gem5-stable\\m5out-se-x86\\requtTraceFile-perlbench.txt", \
-		"E:\\ShareShen\\gem5-stable\\m5out-se-x86\\perlbench-avl-8assoc.txt");
+		"E:\\ShareShen\\gem5-stable\\m5out-se-x86\\perlbench-avl-4assoc.txt");
 
  	return 0;
 }
