@@ -11,9 +11,11 @@
 #include <stdexcept>
 #include <list>
 #include <float.h>
-#define MISS_BAR 1024 * 64 + 1
 
-inline double power(const double base,const int index);
+
+#define MISS_BAR 1024 * 4 + 1
+
+inline double power(const double base,const int index, double coef = 1.0);
 
 inline double biDistribution(const int m, const int n, const double p);
 
@@ -22,6 +24,7 @@ class Histogram
 {
 	std::vector<B> binsVec;
 	std::vector<T> transBins;
+	std::vector<double> assocDist;
 	/* number of sampling */
 	B samples;
 	/* total number of miss references */
@@ -32,13 +35,12 @@ class Histogram
 public:
 	Histogram() : misses(0), missRate(0.0), 
 		          binsVec(MISS_BAR + 1, 0), 
-		          transBins(MISS_BAR + 1, 0) {}
+		          transBins(MISS_BAR + 1, 0),
+				  assocDist(MISS_BAR + 1, 0) {}
 
 	~Histogram() {};
 
 	void sample(B x);
-
-	//bool intoVector();
 
 	void changeAssoc(const int & cap, const int & blk, const int & assoc);
 
@@ -67,9 +69,16 @@ public:
 	void calMissRate(const int & assoc)
 	{
 		for (int i = assoc; i < transBins.size(); ++i)
-			misses += transBins[i];
+			misses += (B)std::round(transBins[i]);
 		missRate = (double)misses / samples;
 	}
+
+	//void calMissRate(const int & assoc)
+	//{
+	//	for (int i = assoc; i < assocDist.size(); ++i)
+	//		misses += assocDist[i];
+	//	missRate = (double)misses / samples;
+	//}
 
 	void calMissRate(const int & cap, const int & blk)
 	{
@@ -145,7 +154,7 @@ class AvlTreeStack
 
 public:
 	/* hist contains the stack distance distribution */
-	Histogram<int, double> hist;
+	Histogram<int, long double> hist;
 
 	AvlTreeStack(long & v) : dist(0)
 	{

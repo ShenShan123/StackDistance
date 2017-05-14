@@ -4,54 +4,70 @@
 #include "stdafx.h"
 #include "StackDistance.h"
 
-inline double power(const double base, const int index)
+inline double power(const double base, const int pow, double coef)
 {
-	if (!index || base <= 0)
+	if (base <= 0)
 		return 0.0;
 
-	double ans = 1.0;
-	for (int i = 1; i <= index; ++i) {
-		ans *= base;
+	for (int i = 1; i <= pow; ++i) {
+		coef *= base;
 		/* keep off underflow_error,
 		actually we should throw an underflow exception */
-		if (ans <= DBL_MIN)
+		if (coef <= DBL_MIN)
 			return 0.0;
 	}
 
-	return ans;
+	return coef;
 }
 
 inline double biDistribution(const int m, const int n, const double p)
 {
 	if (m < 0 || m > n || p < 0 || p > 1)
 		return 0.0;
+	else if (m == 0)
+		return 1.0;
 
 	double ans = 1.0;
-	int i = 1; /* we start from 1. */
+	//int i = 1; /* we start from 1. */
+	bool hasP = true;
 
-	if (m >= n - m)
-		while (i <= m) {
-			double np = i <= (n - m) ? (1 - p) : 1.0;
-			ans *= (n - i + 1) * p * np;
+	if (m >= n - m) {
+		int i = n - m;
+		while (i > 0) {
+			ans *= (n - i + 1) * (1 - p) * p;
 			ans /= i;
-			++i;
+			--i;
 			/* keep off underflow_error */
 			if (ans <= DBL_MIN)
 				return 0.0;
-		}
-	else
-		while (i <= n - m) {
-			if (i <= m) {
-				ans *= (n - i + 1) * p * (1 - p);
-				ans /= i;
+			else if (ans >= FLT_MAX && hasP) {
+				ans = power(p, m - n + m, ans);
+				hasP = false;
 			}
-			else
-				ans *= (1 - p);
-			++i;
+
+			assert(ans < DBL_MAX);
+		}
+		if (hasP)
+			ans = power(p, m - n + m, ans);
+	}
+	else {
+		int i = m;
+		while (i > 0) {
+			ans *= (n - i + 1) * p * (1 - p);
+			ans /= i;
+			--i;
 			/* keep off underflow_error */
 			if (ans <= DBL_MIN)
 				return 0.0;
+			else if (ans >= FLT_MAX && hasP) {
+				ans = power(1 - p, n - m - m, ans);
+				hasP = false;
+			}
+			assert(ans < DBL_MAX);
 		}
+		if (hasP)
+			ans = power(1 - p, n - m - m, ans);
+	}
 	return ans;
 }
 
@@ -66,29 +82,6 @@ void Histogram<B, T>::sample(B x)
 	/* calculate the total num of sampling */
 	++samples;
 }
-
-//template <class B, class T>
-//bool Histogram<B, T>::intoVector()
-//{
-//	std::map<B, T>::iterator it = bins.begin();
-//	std::map<B, T>::iterator itLast = bins.end();
-//	--itLast;
-//	assert(itLast->first == MISS_BAR);
-//
-//	for (B i = 0; i <= MISS_BAR; ++i) {
-//		/* we keep 0 value bars */
-//		if (it->first != i)
-//			binsVec.push_back(0);
-//		else {
-//			binsVec.push_back((double)it->second);
-//			++it;
-//		}
-//		/* initialize transBins */
-//		transBins.push_back(0);
-//	}
-//
-//	return binsVec.size() == MISS_BAR + 1;
-//}
 
 template <class B, class T>
 void Histogram<B, T>::changeAssoc(const int & cap, const int & blk, const int & assoc)
@@ -115,6 +108,32 @@ void Histogram<B, T>::changeAssoc(const int & cap, const int & blk, const int & 
 	/* for the original first bar, no need to change */
 	transBins[0] += binsVec[0];
 }
+
+//template <class B, class T>
+//void Histogram<B, T>::changeAssoc(const int & cap, const int & blk, const int & assoc)
+//{
+//	//assert(transBins[MISS_BAR] && transBins[1]);
+//	int setNum = cap / (blk * assoc);
+//	/* p is a probability of mapping to a specific set */
+//	double p = (double)1 / setNum;
+//
+//	/* calculate the histogram for each set */
+//	for (int s = 0; s < setNum; ++s) {
+//		/* transition of each bar */
+//		for (int i = 1; i < transBins.size(); ++i) {
+//			if (!transBins[i]) continue;
+//			/* each bar j before the current, need to be added,
+//			it's a binominal distribution */
+//			for (int j = i - 1; j >= 0; --j) {
+//				assocDist[j] += p * transBins[i] * biDistribution(j, i, p);
+//			}
+//			/* update current bar */
+//			assocDist[i] += p * transBins[i] * power(p, i);
+//		}
+//	}
+//	/* for the original first bar, no need to change */
+//	assocDist[0] += transBins[0];
+//}
 
 template <class B, class T>
 void Histogram<B, T>::print(std::ofstream & file)
@@ -372,6 +391,7 @@ Reader::Reader(std::string _path, std::string _pathout) {
 
 	std::string temp;
 	std::string line;
+	int interval = 1;
 
 	std::cout << "Reading files and calculate stack distances..." << std::endl;
 	while (std::getline(file, line)) {
@@ -379,6 +399,14 @@ Reader::Reader(std::string _path, std::string _pathout) {
 		uint64_t paddr;
 		uint64_t vaddr;
 		lineStream >> temp;
+		
+		if (temp == "interval") {
+			if (interval)
+				--interval;
+			else
+				break;
+		}
+
 		lineStream >> std::hex >> paddr;
 		lineStream >> temp;
 		lineStream >> std::hex >> vaddr;
@@ -392,33 +420,30 @@ Reader::Reader(std::string _path, std::string _pathout) {
 		//listStack.calStackDist(addr);
 		uint64_t mask = 63;
 		addr = addr & (~mask);
-		//avlTreeStack.calStackDist(addr);
-		reuseDist.calReuseDist(addr);
+		avlTreeStack.calStackDist(addr);
+		//reuseDist.calReuseDist(addr);
 	}
 	//listStack.print("E:\\ShareShen\\gem5-origin\\m5out-se-x86\\perlbench.txt");
 	std::cout << "transiting stack distances..." << std::endl;
 
-	int cap = 32 * 1024;
+	int cap = 64 * 1024;
 	int blk = 64;
-	int assoc = 4;
-	//avlTreeStack.transHist(cap, blk, assoc);
-	//avlTreeStack.hist.calMissRate(assoc);
-	//avlTreeStack.hist.print(fileOut);
-	reuseDist.transHist();
-	reuseDist.hist.calMissRate(cap, blk);
+	int assoc = 2;
+	avlTreeStack.transHist(cap, blk, assoc);
+	avlTreeStack.hist.calMissRate(assoc);
+	avlTreeStack.hist.print(fileOut);
+	//reuseDist.transHist();
+	//reuseDist.hist.changeAssoc(cap, blk, assoc);
+	//reuseDist.hist.calMissRate(assoc);
 	file.close();
 	fileOut.close();
 }
 
 int main()
 {
-	//Histogram<int, double> hist;
-	//hist.sample(1);
-	//hist.sample(4);
-	//hist.sample(4);
 	//Histogram<int, double> hist("E:\\ShareShen\\gem5-origin\\m5out-se-x86\\perlbench-l1d32k256assoc-set-distribution.txt");
-	Reader reader("E:\\ShareShen\\gem5-stable\\m5out-se-x86\\requtTraceFile-perlbench.txt", \
-		"E:\\ShareShen\\gem5-stable\\m5out-se-x86\\perlbench-avl-4assoc.txt");
+	Reader reader("E:\\ShareShen\\gem5-stable\\m5out-se-x86\\cactusADM\\cactusADM-trace-part.txt", \
+		"E:\\ShareShen\\gem5-stable\\m5out-se-x86\\cactusADM\\cactusADM-avl-2assoc.txt");
 
  	return 0;
 }
