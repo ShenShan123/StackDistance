@@ -9,7 +9,8 @@
 
 #include <stdio.h>
 #include <tchar.h>
-
+#include <boost/math/distributions/binomial.hpp>
+#include <boost/math/distributions/poisson.hpp>
 
 
 // TODO: reference additional headers your program requires here

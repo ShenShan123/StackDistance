@@ -12,8 +12,10 @@
 #include <list>
 #include <float.h>
 
+//#define REUSE
+#define STACK
 
-#define MISS_BAR 1024 * 4 + 1
+#define MISS_BAR 1024 * 2 + 1
 
 inline double power(const double base,const int index, double coef = 1.0);
 
@@ -22,9 +24,9 @@ inline double biDistribution(const int m, const int n, const double p);
 template <class B, class T>
 class Histogram
 {
+	std::map<long, B> binsMap;
 	std::vector<B> binsVec;
-	std::vector<T> transBins;
-	std::vector<double> assocDist;
+	std::vector<T> binsTra;
 	/* number of sampling */
 	B samples;
 	/* total number of miss references */
@@ -33,16 +35,22 @@ class Histogram
 	double missRate;
 
 public:
-	Histogram() : misses(0), missRate(0.0), 
-		          binsVec(MISS_BAR + 1, 0), 
-		          transBins(MISS_BAR + 1, 0),
-				  assocDist(MISS_BAR + 1, 0) {}
+	Histogram() : misses(0), missRate(0.0)
+		//binsVec(MISS_BAR + 1, 0), 
+		//binsTra(MISS_BAR + 1, 0) 
+	{};
 
 	~Histogram() {};
 
 	void sample(B x);
 
+	bool intoVector();
+
 	void changeAssoc(const int & cap, const int & blk, const int & assoc);
+
+	void changeAssoc2(const int & cap, const int & blk, const int & assoc);
+
+	void changeAssoc3(const int & cap, const int & blk, const int & assoc);
 
 	void transToStackDist()
 	{
@@ -55,36 +63,34 @@ public:
 			frac.push_back((double)(samples - temp) / samples);
 		}
 
+		std::vector<T> transTemp(binsTra);
+
 		for (int i = 1; i < binsVec.size(); ++i) {
 			double sumFrac = 0.0;
 			for (int j = 1; j <= i; ++j)
 				sumFrac += frac[j];
-			transBins[(int)std::round(sumFrac)] += binsVec[i];
+			transTemp[(int)std::round(sumFrac)] += binsVec[i];
 		}
-		transBins[0] = binsVec[0];
+		transTemp[0] = binsVec[0];
+
+		binsVec.clear();
+		binsVec = transTemp;
 	}
 
 	void print(std::ofstream & file);
 
 	void calMissRate(const int & assoc)
 	{
-		for (int i = assoc; i < transBins.size(); ++i)
-			misses += (B)std::round(transBins[i]);
+		for (int i = assoc; i < binsTra.size(); ++i)
+			misses += (B)std::round(binsTra[i]);
 		missRate = (double)misses / samples;
 	}
-
-	//void calMissRate(const int & assoc)
-	//{
-	//	for (int i = assoc; i < assocDist.size(); ++i)
-	//		misses += assocDist[i];
-	//	missRate = (double)misses / samples;
-	//}
 
 	void calMissRate(const int & cap, const int & blk)
 	{
 		int blkNum = cap / blk;
-		for (int i = blkNum; i < transBins.size(); ++i)
-			misses += transBins[i];
+		for (int i = blkNum; i < binsVec.size(); ++i)
+			misses += binsVec[i];
 		missRate = (double)misses / samples;
 	}
 };
@@ -259,9 +265,13 @@ public:
 class Reader
 {
 private:
+#ifdef STACK
 	AvlTreeStack avlTreeStack;
+#endif
 	ListStack listStack;
+#ifdef REUSE
 	ReuseDist reuseDist;
+#endif
 
 public:
 	Reader(std::string _path, std::string _pathout);

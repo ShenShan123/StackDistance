@@ -74,19 +74,45 @@ inline double biDistribution(const int m, const int n, const double p)
 template <class B, class T>
 void Histogram<B, T>::sample(B x)
 {
-	if (!binsVec[x]) {
-		binsVec[x] = 1;
+	if (!binsMap[x]) {
+		binsMap[x] = 1;
 	}
 	else
-		++binsVec[x];
+		++binsMap[x];
 	/* calculate the total num of sampling */
 	++samples;
 }
 
 template <class B, class T>
+bool Histogram<B, T>::intoVector()
+{
+	std::map<long, B>::iterator last = binsMap.end();
+	/* point to the last element */
+	long maxSize = (--last)->first;
+
+	binsVec.reserve(maxSize);
+
+	long temp = 0;
+	std::map<long, B>::iterator it = binsMap.begin();
+
+	for (int i = 0; i <= maxSize; ++i)
+		if (temp == it->first) {
+			binsVec.push_back(it->second);
+			++it;
+			++temp;
+		}
+		else {
+			binsVec.push_back(0);
+			++temp;
+		}
+
+		return binsVec.size() == last->first + 1;
+}
+
+template <class B, class T>
 void Histogram<B, T>::changeAssoc(const int & cap, const int & blk, const int & assoc)
 {
-	assert(binsVec[MISS_BAR] && binsVec[1]);
+	binsTra.resize(binsVec.size(), 0);
 	int setNum = cap / (blk * assoc);
 	/* p is a probability of mapping to a specific set */
 	double p = (double)1 / setNum;
@@ -96,44 +122,76 @@ void Histogram<B, T>::changeAssoc(const int & cap, const int & blk, const int & 
 		/* transition of each bar */
 		for (int i = 1; i < binsVec.size(); ++i) {
 			if (!binsVec[i]) continue;
+
 			/* each bar j before the current, need to be added,
-			it's a binominal distribution */
-			for (int j = i - 1; j >= 0; --j) {
-				transBins[j] += p * binsVec[i] * biDistribution(j, i, p);
-			}
+			it's a binomial distribution */
+			boost::math::binomial binom(i, p);
+			
+			for (int j = i - 1; j >= 0; --j)
+				//binsTra[j] += p * binsVec[i] * biDistribution(j, i, p);
+				binsTra[j] += p * binsVec[i] * boost::math::pdf(binom, j);
+
 			/* update current bar */
-			transBins[i] += p * binsVec[i] * power(p, i);
+			binsTra[i] += p * binsVec[i] * power(p, i);
 		}
 	}
 	/* for the original first bar, no need to change */
-	transBins[0] += binsVec[0];
+	binsTra[0] += binsVec[0];
 }
 
-//template <class B, class T>
-//void Histogram<B, T>::changeAssoc(const int & cap, const int & blk, const int & assoc)
-//{
-//	//assert(transBins[MISS_BAR] && transBins[1]);
-//	int setNum = cap / (blk * assoc);
-//	/* p is a probability of mapping to a specific set */
-//	double p = (double)1 / setNum;
-//
-//	/* calculate the histogram for each set */
-//	for (int s = 0; s < setNum; ++s) {
-//		/* transition of each bar */
-//		for (int i = 1; i < transBins.size(); ++i) {
-//			if (!transBins[i]) continue;
-//			/* each bar j before the current, need to be added,
-//			it's a binominal distribution */
-//			for (int j = i - 1; j >= 0; --j) {
-//				assocDist[j] += p * transBins[i] * biDistribution(j, i, p);
-//			}
-//			/* update current bar */
-//			assocDist[i] += p * transBins[i] * power(p, i);
-//		}
-//	}
-//	/* for the original first bar, no need to change */
-//	assocDist[0] += transBins[0];
-//}
+template <class B, class T>
+void Histogram<B, T>::changeAssoc2(const int & cap, const int & blk, const int & assoc)
+{
+	int setNum = cap / (blk * assoc);
+	/* p is a probability of mapping to a specific set */
+	double p = (double)1 / setNum;
+
+	/* if a mem ref's stack distance <= assoc - 1, it is a cache hit */
+	for (int i = 0; i < assoc; ++i)
+		binsTra.push_back(binsVec[i]);
+	
+	binsTra.resize(binsVec.size());
+
+	/* transition of each bar */
+	for (int i = assoc; i < binsVec.size(); ++i) {
+		if (!binsVec[i]) continue;
+
+		/* each bar j before the current, need to be added,
+		it's a binomial distribution */
+		boost::math::binomial binom(i, p);
+
+		/* start from j=i, because i is the current bar */
+		for (int j = i; j >= 0; --j)
+			binsTra[j] += binsVec[i] * boost::math::pdf(binom, j);
+	}
+}
+
+template <class B, class T>
+void Histogram<B, T>::changeAssoc3(const int & cap, const int & blk, const int & assoc)
+{
+	int setNum = cap / (blk * assoc);
+	/* p is a probability of mapping to a specific set */
+	double p = (double)1 / setNum;
+
+	/* if a mem ref's stack distance <= assoc - 1, it is a cache hit */
+	for (int i = 0; i < assoc; ++i)
+		binsTra.push_back(binsVec[i]);
+
+	binsTra.resize(binsVec.size());
+
+	/* transition of each bar */
+	for (int i = assoc; i < binsVec.size(); ++i) {
+		if (!binsVec[i]) continue;
+
+		/* each bar j before the current, need to be added,
+		it's a binomial distribution */
+		boost::math::poisson_distribution<double> pois(i * p);
+
+		/* start from j=i, because i is the current bar */
+		for (int j = i; j >= 0; --j)
+			binsTra[j] += binsVec[i] * boost::math::pdf(pois, j);
+	}
+}
 
 template <class B, class T>
 void Histogram<B, T>::print(std::ofstream & file)
@@ -142,10 +200,10 @@ void Histogram<B, T>::print(std::ofstream & file)
 	file << "total_misses" << "\t" << misses << std::endl;
 	file << "miss_rate" << "\t" << missRate << std::endl;
 
-	for (int i = 0; i < transBins.size(); ++i) {
+	for (int i = 0; i < binsTra.size(); ++i) {
 		/* do not print zero value bins */
-		if (!transBins[i]) continue;
-		file << "dist" << i << "\t" << transBins[i] << std::endl;
+		if (!binsTra[i]) continue;
+		file << "dist" << i << "\t" << binsTra[i] << std::endl;
 	}
 }
 
@@ -159,7 +217,6 @@ void AvlTreeStack::destroy(AvlNode<long> * & tree)
 	delete tree;
 	tree = nullptr;
 }
-
 
 void AvlTreeStack::insert(AvlNode<long> * & tree, long & v) {
 	if (!tree) {
@@ -370,7 +427,9 @@ void AvlTreeStack::calStackDist(uint64_t addr)
 
 void AvlTreeStack::transHist(const int cap, const int blk, const int assoc)
 {
-	hist.changeAssoc(cap, blk, assoc);
+	//hist.changeAssoc(cap, blk, assoc);
+	hist.changeAssoc2(cap, blk, assoc);
+	//hist.changeAssoc3(cap, blk, assoc);
 }
 
 Reader::Reader(std::string _path, std::string _pathout) {
@@ -420,8 +479,12 @@ Reader::Reader(std::string _path, std::string _pathout) {
 		//listStack.calStackDist(addr);
 		uint64_t mask = 63;
 		addr = addr & (~mask);
+#ifdef STACK
 		avlTreeStack.calStackDist(addr);
-		//reuseDist.calReuseDist(addr);
+#endif
+#ifdef REUSE
+		reuseDist.calReuseDist(addr);
+#endif
 	}
 	//listStack.print("E:\\ShareShen\\gem5-origin\\m5out-se-x86\\perlbench.txt");
 	std::cout << "transiting stack distances..." << std::endl;
@@ -429,18 +492,24 @@ Reader::Reader(std::string _path, std::string _pathout) {
 	int cap = 64 * 1024;
 	int blk = 64;
 	int assoc = 2;
+#ifdef STACK
+	bool succ = avlTreeStack.hist.intoVector();
 	avlTreeStack.transHist(cap, blk, assoc);
 	avlTreeStack.hist.calMissRate(assoc);
-	avlTreeStack.hist.print(fileOut);
-	//reuseDist.transHist();
-	//reuseDist.hist.changeAssoc(cap, blk, assoc);
-	//reuseDist.hist.calMissRate(assoc);
+	//avlTreeStack.hist.print(fileOut);
+#endif
+#ifdef REUSE
+	reuseDist.transHist();
+	reuseDist.hist.changeAssoc(cap, blk, assoc);
+	reuseDist.hist.calMissRate(assoc);
+	//reuseDist.hist.calMissRate(cap, blk);
+#endif
 	file.close();
 	fileOut.close();
 }
 
 int main()
-{
+{	
 	//Histogram<int, double> hist("E:\\ShareShen\\gem5-origin\\m5out-se-x86\\perlbench-l1d32k256assoc-set-distribution.txt");
 	Reader reader("E:\\ShareShen\\gem5-stable\\m5out-se-x86\\cactusADM\\cactusADM-trace-part.txt", \
 		"E:\\ShareShen\\gem5-stable\\m5out-se-x86\\cactusADM\\cactusADM-avl-2assoc.txt");
