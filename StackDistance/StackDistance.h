@@ -11,11 +11,16 @@
 #include <stdexcept>
 #include <list>
 #include <float.h>
+#include <random>
+#include <chrono>
+#include <unordered_map>
+#include <unordered_set>
 
 //#define REUSE
-#define STACK
+//#define STACK
+#define SAMPLE
 
-#define MISS_BAR 1024 * 2 + 1
+#define MISS_BAR 1024 * 2
 
 inline double power(const double base,const int index, double coef = 1.0);
 
@@ -45,46 +50,18 @@ public:
 	void sample(B x);
 
 	bool intoVector();
-
+	/* use self-defined binomial fucntion */
 	void changeAssoc(const int & cap, const int & blk, const int & assoc);
-
+	/* use boost binomial distribution */
 	void changeAssoc2(const int & cap, const int & blk, const int & assoc);
-
+	/* use boost poisson distribution */
 	void changeAssoc3(const int & cap, const int & blk, const int & assoc);
 
-	void transToStackDist()
-	{
-		std::vector<double> frac;
-		B temp = 0;
-		/* calculate the fraction of reuse distance
-		   is greater than i */
-		for (int i = 0; i < binsVec.size(); ++i) {
-			temp += binsVec[i];
-			frac.push_back((double)(samples - temp) / samples);
-		}
-
-		std::vector<T> transTemp(binsTra);
-
-		for (int i = 1; i < binsVec.size(); ++i) {
-			double sumFrac = 0.0;
-			for (int j = 1; j <= i; ++j)
-				sumFrac += frac[j];
-			transTemp[(int)std::round(sumFrac)] += binsVec[i];
-		}
-		transTemp[0] = binsVec[0];
-
-		binsVec.clear();
-		binsVec = transTemp;
-	}
+	void transToStackDist();
 
 	void print(std::ofstream & file);
 
-	void calMissRate(const int & assoc)
-	{
-		for (int i = assoc; i < binsTra.size(); ++i)
-			misses += (B)std::round(binsTra[i]);
-		missRate = (double)misses / samples;
-	}
+	void calMissRate(const int & assoc);
 
 	void calMissRate(const int & cap, const int & blk)
 	{
@@ -152,23 +129,22 @@ public:
 
 class AvlTreeStack
 {
-	AvlNode<long> * root;
-	bool isRoot;
 	std::map <uint64_t, long> addrMap;
 	long index;
 	int dist;
 
 public:
+	AvlNode<long> * root;
+
 	/* hist contains the stack distance distribution */
-	Histogram<int, long double> hist;
+	Histogram<int, double> hist;
 
 	AvlTreeStack(long & v) : dist(0)
 	{
 		root = new AvlNode<long>(v);
-		isRoot = true;
 	}
 
-	AvlTreeStack() : root(nullptr), dist(0), isRoot(false) {};
+	AvlTreeStack() : root(nullptr), dist(0) {};
 
 	~AvlTreeStack() { destroy(root); }
 
@@ -191,9 +167,9 @@ public:
 	return tree;
 	}*/
 
-	std::pair<long, long> & findMin(AvlNode<long> * & tree);
+	AvlNode<long> * & findMin(AvlNode<long> * & tree);
 
-	std::pair<long, long> & findMax(AvlNode<long> * & tree);
+	AvlNode<long> * & findMax(AvlNode<long> * & tree);
 
 	void remove(AvlNode<long> * & tree, std::pair<long, long> & inter);
 
@@ -204,6 +180,8 @@ public:
 	void balance(AvlNode<long> * & tree);
 
 	void calStackDist(uint64_t addr);
+
+	void smapledStackDist(uint64_t addr);
 
 	void transHist(const int cap, const int blk, const int assoc);
 };
@@ -262,16 +240,119 @@ public:
 	}
 };
 
+class SampleStack
+{
+	long index;
+	std::unordered_map<uint64_t, std::unordered_set<uint64_t>> addrTable;
+	int randNum;
+	int sampleCounter;
+	int expectSamples;
+	int hibernInter;
+	int sampleInter;
+	long statusCounter;
+	bool isSampling;
+
+public:
+	Histogram<int, double> hist;
+
+	SampleStack() : sampleCounter(0), expectSamples(2000), hibernInter(3000000), 
+		            sampleInter(1000000), isSampling(false), statusCounter(0) {};
+
+	int genRandom()
+	{
+		// construct a trivial random generator engine from a time-based seed:
+		int seed = std::chrono::system_clock::now().time_since_epoch().count();
+		static std::mt19937 engine(seed);
+		static std::geometric_distribution<int> geom((double)expectSamples / sampleInter);
+		int rand = 0;
+		/* the random can not be 0 */
+		while (!rand)
+			rand = geom(engine);
+
+		return rand;
+	}
+
+	void calStackDist(uint64_t addr)
+	{
+		++sampleCounter;
+		++statusCounter;
+
+		/* start sampling interval */
+		if (!isSampling && statusCounter == hibernInter) {
+			statusCounter = 0;
+			sampleCounter = 0;
+			isSampling = true;
+			randNum = genRandom();
+		}
+		/* start hibernation interval */
+		else if (isSampling && statusCounter == sampleInter) {
+			statusCounter = 0;
+			isSampling = false;
+		}
+
+		/* if we find a same address x in addrTable,
+		   record its stack distance and
+		   the sampling of x is finished */
+		std::unordered_map<uint64_t, std::unordered_set<uint64_t>>::iterator pos;
+		pos = addrTable.find(addr);
+		if (pos != addrTable.end()) {
+			int dist = pos->second.size() - 1;
+			hist.sample(dist);
+			addrTable.erase(addr);
+		}
+
+		std::unordered_map<uint64_t, std::unordered_set<uint64_t>>::iterator it = addrTable.begin();
+		
+		/* make sure the max size of addrTable */
+		if (addrTable.size() > 500) {
+			hist.sample(MISS_BAR);
+			addrTable.erase(it->first);
+		}
+
+		/* record unique mem references between the sampled address x */
+		for (it = addrTable.begin(); it != addrTable.end(); ) {
+			it->second.insert(addr);
+			/* if the set of sampled address x is too large,
+			   erase it from  the table and record as MISS_BAR */
+			if (it->second.size() > MISS_BAR) {
+				std::unordered_map<uint64_t, std::unordered_set<uint64_t>>::iterator eraseIt = it;
+				++it;
+				hist.sample(MISS_BAR);
+				addrTable.erase(eraseIt->first);
+			}
+			else
+				++it;
+		}
+
+		/* if it is time to do sampling */
+		if (isSampling && sampleCounter == randNum) {
+			/* it is a new sampled address */
+			assert(addrTable[addr].empty());
+			addrTable[addr].insert(0);
+			/* reset the sampleCounter and randNum to prepare next sample */
+			sampleCounter = 0;
+			randNum = genRandom();
+			//randNum = 1;
+		}
+	}
+};
+
 class Reader
 {
 private:
 #ifdef STACK
 	AvlTreeStack avlTreeStack;
 #endif
-	ListStack listStack;
+
 #ifdef REUSE
 	ReuseDist reuseDist;
 #endif
+
+#ifdef SAMPLE
+	SampleStack sampleStack;
+#endif
+
+	ListStack listStack;
 
 public:
 	Reader(std::string _path, std::string _pathout);

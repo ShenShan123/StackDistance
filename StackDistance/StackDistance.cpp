@@ -74,7 +74,7 @@ inline double biDistribution(const int m, const int n, const double p)
 template <class B, class T>
 void Histogram<B, T>::sample(B x)
 {
-	if (!binsMap[x]) {
+	if (!binsMap[x]){ 
 		binsMap[x] = 1;
 	}
 	else
@@ -107,6 +107,32 @@ bool Histogram<B, T>::intoVector()
 		}
 
 		return binsVec.size() == last->first + 1;
+}
+
+template <class B, class T>
+void Histogram<B, T>::transToStackDist()
+{
+	std::vector<double> frac;
+	B temp = 0;
+	/* calculate the fraction of reuse distance
+	is greater than i */
+	for (int i = 0; i < binsVec.size(); ++i) {
+		temp += binsVec[i];
+		frac.push_back((double)(samples - temp) / samples);
+	}
+
+	std::vector<T> transTemp(binsTra);
+
+	for (int i = 1; i < binsVec.size(); ++i) {
+		double sumFrac = 0.0;
+		for (int j = 1; j <= i; ++j)
+			sumFrac += frac[j];
+		transTemp[(int)std::round(sumFrac)] += binsVec[i];
+	}
+	transTemp[0] = binsVec[0];
+
+	binsVec.clear();
+	binsVec = transTemp;
 }
 
 template <class B, class T>
@@ -194,6 +220,14 @@ void Histogram<B, T>::changeAssoc3(const int & cap, const int & blk, const int &
 }
 
 template <class B, class T>
+void Histogram<B, T>::calMissRate(const int & assoc)
+{
+	for (int i = assoc; i < binsTra.size(); ++i)
+		misses += (B)std::round(binsTra[i]);
+	missRate = (double)misses / samples;
+}
+
+template <class B, class T>
 void Histogram<B, T>::print(std::ofstream & file)
 {
 	file << "total_samples" << "\t" << samples << std::endl;
@@ -237,7 +271,7 @@ void AvlTreeStack::insert(AvlNode<long> * & tree, long & v) {
 		dist += interval.second - v + tree->rHoles;
 		interval.first = v;
 		if (n1) {
-			std::pair<long, long> & temp = findMax(n1);
+			std::pair<long, long> & temp = findMax(n1)->interval;
 			if (v == temp.second + 1) {
 				interval.first = temp.first;
 				remove(n1, temp);
@@ -248,7 +282,7 @@ void AvlTreeStack::insert(AvlNode<long> * & tree, long & v) {
 		dist += tree->rHoles;
 		interval.second = v;
 		if (n2) {
-			std::pair<long, long> & temp = findMin(n2);
+			std::pair<long, long> & temp = findMin(n2)->interval;
 			if (v == temp.first - 1) {
 				interval.second = temp.second;
 				remove(n2, temp);
@@ -265,31 +299,27 @@ void AvlTreeStack::insert(AvlNode<long> * & tree, long & v) {
 	balance(tree);
 }
 
-
 void AvlTreeStack::insert(long & a) { dist = 0; insert(root, a); }
 
-
-std::pair<long, long> & AvlTreeStack::findMin(AvlNode<long> * & tree)
+AvlNode<long> * & AvlTreeStack::findMin(AvlNode<long> * & tree)
 {
 	assert(tree);
 
 	if (!tree->left)
-		return tree->interval;
+		return tree;
 	else
 		findMin(tree->left);
 }
 
-
-std::pair<long, long> & AvlTreeStack::findMax(AvlNode<long> * & tree)
+AvlNode<long> * & AvlTreeStack::findMax(AvlNode<long> * & tree)
 {
 	assert(tree);
 
 	if (!tree->right)
-		return tree->interval;
+		return tree;
 	else
 		findMax(tree->right);
 }
-
 
 void AvlTreeStack::remove(AvlNode<long> * & tree, std::pair<long, long> & inter)
 {
@@ -300,9 +330,13 @@ void AvlTreeStack::remove(AvlNode<long> * & tree, std::pair<long, long> & inter)
 		remove(tree->right, inter);
 	else if (inter.first < tree->interval.first)
 		remove(tree->left, inter);
+
+	/* the tree has two children , 
+	   replace its content with the min subnode and delete the min node */
 	else if (tree->left && tree->right) {
-		std::pair<long, long> & temp = findMin(tree->right);
-		remove(tree, temp);
+		AvlNode<long> * & minNode = findMin(tree->right);
+		tree->interval = minNode->interval;
+		remove(tree->right, tree->interval);
 	}
 	else {
 		AvlNode<long> * old = tree;
@@ -316,7 +350,6 @@ void AvlTreeStack::remove(AvlNode<long> * & tree, std::pair<long, long> & inter)
 
 	balance(tree);
 }
-
 
 void AvlTreeStack::rotate(AvlNode<long> * & tree)
 {
@@ -353,7 +386,6 @@ void AvlTreeStack::rotate(AvlNode<long> * & tree)
 	}
 }
 
-
 void AvlTreeStack::doubleRotate(AvlNode<long> * & tree)
 {
 	if (!tree)
@@ -372,7 +404,6 @@ void AvlTreeStack::doubleRotate(AvlNode<long> * & tree)
 
 	rotate(tree);
 }
-
 
 void AvlTreeStack::balance(AvlNode<long> * & tree)
 {
@@ -425,6 +456,11 @@ void AvlTreeStack::calStackDist(uint64_t addr)
 	value = index;
 }
 
+void AvlTreeStack::smapledStackDist(uint64_t addr)
+{
+	++index;
+}
+
 void AvlTreeStack::transHist(const int cap, const int blk, const int assoc)
 {
 	//hist.changeAssoc(cap, blk, assoc);
@@ -453,6 +489,7 @@ Reader::Reader(std::string _path, std::string _pathout) {
 	int interval = 1;
 
 	std::cout << "Reading files and calculate stack distances..." << std::endl;
+
 	while (std::getline(file, line)) {
 		std::stringstream lineStream(line);
 		uint64_t paddr;
@@ -479,11 +516,17 @@ Reader::Reader(std::string _path, std::string _pathout) {
 		//listStack.calStackDist(addr);
 		uint64_t mask = 63;
 		addr = addr & (~mask);
+
 #ifdef STACK
 		avlTreeStack.calStackDist(addr);
 #endif
+
 #ifdef REUSE
 		reuseDist.calReuseDist(addr);
+#endif
+
+#ifdef SAMPLE
+		sampleStack.calStackDist(addr);
 #endif
 	}
 	//listStack.print("E:\\ShareShen\\gem5-origin\\m5out-se-x86\\perlbench.txt");
@@ -498,19 +541,48 @@ Reader::Reader(std::string _path, std::string _pathout) {
 	avlTreeStack.hist.calMissRate(assoc);
 	//avlTreeStack.hist.print(fileOut);
 #endif
+
 #ifdef REUSE
 	reuseDist.transHist();
 	reuseDist.hist.changeAssoc(cap, blk, assoc);
 	reuseDist.hist.calMissRate(assoc);
 	//reuseDist.hist.calMissRate(cap, blk);
 #endif
+
+#ifdef SAMPLE
+	bool succ = sampleStack.hist.intoVector();
+	sampleStack.hist.changeAssoc2(cap, blk, assoc);
+	sampleStack.hist.calMissRate(assoc);
+#endif // SAMPLE
+
 	file.close();
 	fileOut.close();
 }
 
 int main()
-{	
-	//Histogram<int, double> hist("E:\\ShareShen\\gem5-origin\\m5out-se-x86\\perlbench-l1d32k256assoc-set-distribution.txt");
+{
+	/*SampleStack sampleStack;
+	sampleStack.calStackDist(8);
+	sampleStack.calStackDist(20);
+	sampleStack.calStackDist(21);
+	sampleStack.calStackDist(21);
+	sampleStack.calStackDist(23);
+	sampleStack.calStackDist(24);
+	sampleStack.calStackDist(20);
+	sampleStack.calStackDist(8);*/
+
+	AvlTreeStack avlTreeStack;
+	long temp;
+	temp = 4;
+	avlTreeStack.insert(temp);
+	temp = 1;
+	avlTreeStack.insert(temp);
+	temp = 7;
+	avlTreeStack.insert(temp);
+	temp = 4;
+	std::pair<long, long> d = std::make_pair(4, 4);
+	avlTreeStack.remove(avlTreeStack.root, d);
+
 	Reader reader("E:\\ShareShen\\gem5-stable\\m5out-se-x86\\cactusADM\\cactusADM-trace-part.txt", \
 		"E:\\ShareShen\\gem5-stable\\m5out-se-x86\\cactusADM\\cactusADM-avl-2assoc.txt");
 

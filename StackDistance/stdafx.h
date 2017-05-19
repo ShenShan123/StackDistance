@@ -11,6 +11,7 @@
 #include <tchar.h>
 #include <boost/math/distributions/binomial.hpp>
 #include <boost/math/distributions/poisson.hpp>
+#include <boost/random.hpp>
 
 
 // TODO: reference additional headers your program requires here
