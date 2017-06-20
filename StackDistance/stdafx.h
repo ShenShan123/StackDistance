@@ -12,6 +12,7 @@
 #include <boost/math/distributions/binomial.hpp>
 #include <boost/math/distributions/poisson.hpp>
 #include <boost/random.hpp>
+#include <boost/math/special_functions/gamma.hpp>
 
 
 // TODO: reference additional headers your program requires here

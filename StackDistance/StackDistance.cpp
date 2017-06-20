@@ -4,73 +4,6 @@
 #include "stdafx.h"
 #include "StackDistance.h"
 
-inline double power(const double base, const int pow, double coef)
-{
-	if (base <= 0)
-		return 0.0;
-
-	for (int i = 1; i <= pow; ++i) {
-		coef *= base;
-		/* keep off underflow_error,
-		actually we should throw an underflow exception */
-		if (coef <= DBL_MIN)
-			return 0.0;
-	}
-
-	return coef;
-}
-
-inline double biDistribution(const int m, const int n, const double p)
-{
-	if (m < 0 || m > n || p < 0 || p > 1)
-		return 0.0;
-	else if (m == 0)
-		return 1.0;
-
-	double ans = 1.0;
-	//int i = 1; /* we start from 1. */
-	bool hasP = true;
-
-	if (m >= n - m) {
-		int i = n - m;
-		while (i > 0) {
-			ans *= (n - i + 1) * (1 - p) * p;
-			ans /= i;
-			--i;
-			/* keep off underflow_error */
-			if (ans <= DBL_MIN)
-				return 0.0;
-			else if (ans >= FLT_MAX && hasP) {
-				ans = power(p, m - n + m, ans);
-				hasP = false;
-			}
-
-			assert(ans < DBL_MAX);
-		}
-		if (hasP)
-			ans = power(p, m - n + m, ans);
-	}
-	else {
-		int i = m;
-		while (i > 0) {
-			ans *= (n - i + 1) * p * (1 - p);
-			ans /= i;
-			--i;
-			/* keep off underflow_error */
-			if (ans <= DBL_MIN)
-				return 0.0;
-			else if (ans >= FLT_MAX && hasP) {
-				ans = power(1 - p, n - m - m, ans);
-				hasP = false;
-			}
-			assert(ans < DBL_MAX);
-		}
-		if (hasP)
-			ans = power(1 - p, n - m - m, ans);
-	}
-	return ans;
-}
-
 template <class B, class T>
 void Histogram<B, T>::sample(B x)
 {
@@ -84,7 +17,7 @@ void Histogram<B, T>::sample(B x)
 }
 
 template <class B, class T>
-bool Histogram<B, T>::intoVector()
+bool Histogram<B, T>::mapToVector()
 {
 	std::map<long, B>::iterator last = binsMap.end();
 	/* point to the last element */
@@ -110,7 +43,7 @@ bool Histogram<B, T>::intoVector()
 }
 
 template <class B, class T>
-void Histogram<B, T>::transToStackDist()
+void Histogram<B, T>::reuseDistToStackDisth()
 {
 	std::vector<double> frac;
 	B temp = 0;
@@ -136,41 +69,38 @@ void Histogram<B, T>::transToStackDist()
 }
 
 template <class B, class T>
-void Histogram<B, T>::changeAssoc(const int & cap, const int & blk, const int & assoc)
+void Histogram<B, T>::fullyToNWay(const int & cap, const int & blk, const int & assoc)
 {
-	binsTra.resize(binsVec.size(), 0);
 	int setNum = cap / (blk * assoc);
 	/* p is a probability of mapping to a specific set */
 	double p = (double)1 / setNum;
 
-	/* calculate the histogram for each set */
-	for (int s = 0; s < setNum; ++s) {
-		/* transition of each bar */
-		for (int i = 1; i < binsVec.size(); ++i) {
-			if (!binsVec[i]) continue;
+	binsTra.clear();
 
-			/* each bar j before the current, need to be added,
-			it's a binomial distribution */
-			boost::math::binomial binom(i, p);
-			
-			for (int j = i - 1; j >= 0; --j)
-				//binsTra[j] += p * binsVec[i] * biDistribution(j, i, p);
-				binsTra[j] += p * binsVec[i] * boost::math::pdf(binom, j);
+	/* if a mem ref's stack distance <= assoc - 1, it is a cache hit */
+	for (int i = 0; i < assoc; ++i)
+		binsTra.push_back(binsVec[i]);
 
-			/* update current bar */
-			binsTra[i] += p * binsVec[i] * power(p, i);
-		}
+	binsTra.resize(binsVec.size());
+
+	/* transition of each bar */
+	for (int i = assoc; i < binsVec.size(); ++i) {
+		if (!binsVec[i]) continue;
+
+		/* start from j=i, because i is the current bar */
+		for (int j = i; j >= 0; --j)
+			binsTra[j] += binsVec[i] * biDistribution(j, i, p);
 	}
-	/* for the original first bar, no need to change */
-	binsTra[0] += binsVec[0];
 }
 
 template <class B, class T>
-void Histogram<B, T>::changeAssoc2(const int & cap, const int & blk, const int & assoc)
+void Histogram<B, T>::fullyToNWay2(const int & cap, const int & blk, const int & assoc)
 {
 	int setNum = cap / (blk * assoc);
 	/* p is a probability of mapping to a specific set */
 	double p = (double)1 / setNum;
+
+	binsTra.clear();
 
 	/* if a mem ref's stack distance <= assoc - 1, it is a cache hit */
 	for (int i = 0; i < assoc; ++i)
@@ -178,22 +108,27 @@ void Histogram<B, T>::changeAssoc2(const int & cap, const int & blk, const int &
 	
 	binsTra.resize(binsVec.size());
 
-	/* transition of each bar */
-	for (int i = assoc; i < binsVec.size(); ++i) {
-		if (!binsVec[i]) continue;
+	try {
+		/* transition of each bar */
+		for (int i = assoc; i < binsVec.size(); ++i) {
+			if (!binsVec[i]) continue;
 
-		/* each bar j before the current, need to be added,
-		it's a binomial distribution */
-		boost::math::binomial binom(i, p);
+			/* each bar j before the current, need to be added,
+			it's a binomial distribution */
+			boost::math::binomial binom(i, p);
 
-		/* start from j=i, because i is the current bar */
-		for (int j = i; j >= 0; --j)
-			binsTra[j] += binsVec[i] * boost::math::pdf(binom, j);
+			/* start from j=i, because i is the current bar */
+			for (int j = i; j >= 0; --j)
+				binsTra[j] += binsVec[i] * boost::math::pdf(binom, j);
+		}
+	}
+	catch (std::exception e) {
+		std::cout << e.what() << std::endl;
 	}
 }
 
 template <class B, class T>
-void Histogram<B, T>::changeAssoc3(const int & cap, const int & blk, const int & assoc)
+void Histogram<B, T>::fullyToNWay3(const int & cap, const int & blk, const int & assoc)
 {
 	int setNum = cap / (blk * assoc);
 	/* p is a probability of mapping to a specific set */
@@ -222,8 +157,123 @@ void Histogram<B, T>::changeAssoc3(const int & cap, const int & blk, const int &
 template <class B, class T>
 void Histogram<B, T>::calMissRate(const int & assoc)
 {
+	misses = 0;
+
 	for (int i = assoc; i < binsTra.size(); ++i)
 		misses += (B)std::round(binsTra[i]);
+	missRate = (double)misses / samples;
+}
+
+template <class B, class T>
+void Histogram<B, T>::calMissRate(const int & cap, const int & blk)
+{
+	int blkNum = cap / blk;
+	for (int i = blkNum; i < binsVec.size(); ++i)
+		misses += binsVec[i];
+	missRate = (double)misses / samples;
+}
+
+/* to calculate C(a, k) / C(b, k) */
+inline double combinationRatio(int b, int a, int k)
+{
+	if (b < a || !a || !b || !k)
+		throw std::exception("Error: combinationRatio: wrong arguments");
+	
+	/* This is for the condition that wouldn't occur. */
+	if (k > a) return 0.0;
+
+
+	int loops = b - a;
+	double result = 1.0;
+	while (loops--)
+		result *= (double)(b - k) / (b--);
+
+	if (result <= DBL_MIN)
+		throw std::exception("Error: combinationRatio: underflow");
+
+	return result;
+}
+
+inline double serialAccesPerm()
+{
+}
+
+template <class B, class T>
+void Histogram<B, T>::calMissRate(const int & assoc, const bool plru)
+{
+	if (!plru)
+		return;
+
+	int tempAssoc = assoc - 1;
+	/* secureDist = log2(assoc),
+	   the least not evcited distance, called secure distance */
+	int secureDist = 0;
+	while (tempAssoc) {
+		tempAssoc >>= 1;
+		++secureDist;
+	}
+
+	/* Now we calculate the approximate miss rate in an assumed LRU cache
+	   that the number of blocks equals to association,
+	   and references with stack distance <= log2(assoc) must be hit. */
+	double tempMisses = 0.0;
+	double tempHits = 0.0;
+	for (int i = 0; i <= secureDist; ++i)
+		tempHits += binsTra[i];
+	for (int i = secureDist + 1; i < assoc; ++i)
+		tempMisses += binsTra[i];
+	double lastAccesMiss = tempMisses / (tempMisses + tempHits);
+
+	double log = secureDist;
+	/* probability for accesses being in-order
+	   no need to use BOOST */
+	double inOrderAccesP = 1.0;
+	while (log)
+		inOrderAccesP *= log--;
+	inOrderAccesP = 1 / inOrderAccesP;
+
+	double missesD = 0.0;
+
+	try {
+		for (int i = secureDist + 1; i < assoc; ++i) {
+			/* probability for eviction */
+			double p = 1.0;
+			/* probability for accessing in-order */
+			double pInOrder = 1.0;
+			/* accesses before current cousins */
+			double front = 0.0;
+			for (int j = 0; j < secureDist; ++j) {
+				double c = combinationRatio(assoc - 1, assoc - 1 - (1 << j), i - 1);
+				p *= 1 - c;
+
+				//pInOrder *= 1 - std::pow((double)j / (j + 1), (double)(1 << j) * (i - 1) / (assoc - 1));
+				
+				/* number of accesses in the serialization in same subtree */
+				double cousins = std::max(std::floor((1 << j) * (i - 1) / (assoc - 1)), 1.0);
+				/* tgammma_ratio(a, b) for (a-1)! / (b-1)! */
+				pInOrder *= cousins * boost::math::tgamma_ratio(front + cousins, front + 1);
+
+				front += cousins;
+				if (pInOrder < DBL_MIN)
+					throw std::exception("Error: calMissRate: underflow");
+			}
+
+			pInOrder /= boost::math::tgamma(i);
+			if (pInOrder >= 1)
+				throw std::exception("Error: calMissRate: wrong calculation");
+			missesD += binsTra[i] * p * pInOrder * lastAccesMiss;
+		}
+	}
+	catch (std::exception e) {
+		std::cout << e.what() << std::endl;
+		return;
+	}
+
+	misses = std::ceil(missesD);
+	/* references with SD > assoc always miss. */
+	for (int i = assoc; i < binsVec.size(); ++i)
+		misses += binsTra[i];
+
 	missRate = (double)misses / samples;
 }
 
@@ -268,7 +318,6 @@ void AvlTreeStack::insert(AvlNode<long> * & tree, long & v) {
 		return;
 
 	if (v == interval.first - 1) {
-		dist += interval.second - v + tree->rHoles;
 		interval.first = v;
 		if (n1) {
 			std::pair<long, long> & temp = findMax(n1)->interval;
@@ -277,9 +326,11 @@ void AvlTreeStack::insert(AvlNode<long> * & tree, long & v) {
 				remove(n1, temp);
 			}
 		}
+		/* update the holes between current address */
+		curHoles += interval.second - v + tree->rHoles;
 	}
+
 	else if (v == interval.second + 1) {
-		dist += tree->rHoles;
 		interval.second = v;
 		if (n2) {
 			std::pair<long, long> & temp = findMin(n2)->interval;
@@ -288,18 +339,26 @@ void AvlTreeStack::insert(AvlNode<long> * & tree, long & v) {
 				remove(n2, temp);
 			}
 		}
+		curHoles += tree->rHoles;
 	}
+
 	else if (v < interval.first - 1) {
-		dist += tree->rHoles + interval.second - interval.first + 1;
 		insert(n1, v);
+		curHoles += tree->rHoles + interval.second - interval.first + 1;
 	}
+
 	else if (v > tree->interval.second + 1)
 		insert(n2, v);
 
 	balance(tree);
 }
 
-void AvlTreeStack::insert(long & a) { dist = 0; insert(root, a); }
+void AvlTreeStack::insert(long & a) 
+{	
+	/* everytime insert a address, get its total holes */
+	curHoles = 0; 
+	insert(root, a);
+}
 
 AvlNode<long> * & AvlTreeStack::findMin(AvlNode<long> * & tree)
 {
@@ -430,7 +489,7 @@ void AvlTreeStack::balance(AvlNode<long> * & tree)
 	tree->updateHoles();
 }
 
-void AvlTreeStack::calStackDist(uint64_t addr)
+void AvlTreeStack::insert(uint64_t addr)
 {
 	long & value = addrMap[addr];
 
@@ -438,7 +497,9 @@ void AvlTreeStack::calStackDist(uint64_t addr)
 
 	/* value is 0 under cold miss */
 	if (!value) {
+#ifdef AVL_HIST
 		hist.sample(MISS_BAR);
+#endif
 		value = index;
 		return;
 	}
@@ -447,25 +508,15 @@ void AvlTreeStack::calStackDist(uint64_t addr)
 	if (value < index) {
 		/* insert a hole */
 		insert(value);
-		int stackDist = index - value - dist - 1;
+		int stackDist = index - value - curHoles - 1;
 		/* if the stack distance is large than MISS_BAR, the reference is definitely missed. */
 		stackDist = stackDist >= MISS_BAR ? MISS_BAR : stackDist;
+#ifdef AVL_HIST
 		hist.sample(stackDist);
+#endif
 	}
 
 	value = index;
-}
-
-void AvlTreeStack::smapledStackDist(uint64_t addr)
-{
-	++index;
-}
-
-void AvlTreeStack::transHist(const int cap, const int blk, const int assoc)
-{
-	//hist.changeAssoc(cap, blk, assoc);
-	hist.changeAssoc2(cap, blk, assoc);
-	//hist.changeAssoc3(cap, blk, assoc);
 }
 
 Reader::Reader(std::string _path, std::string _pathout) {
@@ -486,7 +537,8 @@ Reader::Reader(std::string _path, std::string _pathout) {
 
 	std::string temp;
 	std::string line;
-	int interval = 1;
+	int interval = 0;
+	bool start = false;
 
 	std::cout << "Reading files and calculate stack distances..." << std::endl;
 
@@ -497,11 +549,19 @@ Reader::Reader(std::string _path, std::string _pathout) {
 		lineStream >> temp;
 		
 		if (temp == "interval") {
-			if (interval)
-				--interval;
-			else
+			++interval;
+			if (interval == 2) {
+				start = true;
+				continue;
+			}
+			else if (interval > 2)
 				break;
+			else
+				continue;
 		}
+
+		if (!start)
+			continue;
 
 		lineStream >> std::hex >> paddr;
 		lineStream >> temp;
@@ -518,7 +578,7 @@ Reader::Reader(std::string _path, std::string _pathout) {
 		addr = addr & (~mask);
 
 #ifdef STACK
-		avlTreeStack.calStackDist(addr);
+		avlTreeStack.insert(addr);
 #endif
 
 #ifdef REUSE
@@ -532,26 +592,33 @@ Reader::Reader(std::string _path, std::string _pathout) {
 	//listStack.print("E:\\ShareShen\\gem5-origin\\m5out-se-x86\\perlbench.txt");
 	std::cout << "transiting stack distances..." << std::endl;
 
-	int cap = 64 * 1024;
+	int cap = 32 * 1024;
 	int blk = 64;
-	int assoc = 2;
+	int assoc = 16;
 #ifdef STACK
-	bool succ = avlTreeStack.hist.intoVector();
-	avlTreeStack.transHist(cap, blk, assoc);
+	bool succ = avlTreeStack.hist.mapToVector();
+	avlTreeStack.hist.fullyToNWay2(cap, blk, assoc);
 	avlTreeStack.hist.calMissRate(assoc);
-	//avlTreeStack.hist.print(fileOut);
+	avlTreeStack.hist.calMissRate(assoc, true);
 #endif
 
 #ifdef REUSE
 	reuseDist.transHist();
-	reuseDist.hist.changeAssoc(cap, blk, assoc);
+	reuseDist.hist.fullyToNWay2(cap, blk, assoc);
 	reuseDist.hist.calMissRate(assoc);
 	//reuseDist.hist.calMissRate(cap, blk);
 #endif
 
 #ifdef SAMPLE
-	bool succ = sampleStack.hist.intoVector();
-	sampleStack.hist.changeAssoc2(cap, blk, assoc);
+	bool succ = sampleStack.hist.mapToVector();
+	clock_t starts = clock();
+	sampleStack.hist.fullyToNWay(cap, blk, assoc);
+	double t = clock() - starts;
+	sampleStack.hist.calMissRate(assoc);
+
+	start = clock();
+	sampleStack.hist.fullyToNWay2(cap, blk, assoc);
+	double t2 = clock() - starts;
 	sampleStack.hist.calMissRate(assoc);
 #endif // SAMPLE
 
@@ -561,28 +628,8 @@ Reader::Reader(std::string _path, std::string _pathout) {
 
 int main()
 {
-	/*SampleStack sampleStack;
-	sampleStack.calStackDist(8);
-	sampleStack.calStackDist(20);
-	sampleStack.calStackDist(21);
-	sampleStack.calStackDist(21);
-	sampleStack.calStackDist(23);
-	sampleStack.calStackDist(24);
-	sampleStack.calStackDist(20);
-	sampleStack.calStackDist(8);*/
-
-	AvlTreeStack avlTreeStack;
-	long temp;
-	temp = 4;
-	avlTreeStack.insert(temp);
-	temp = 1;
-	avlTreeStack.insert(temp);
-	temp = 7;
-	avlTreeStack.insert(temp);
-	temp = 4;
-	std::pair<long, long> d = std::make_pair(4, 4);
-	avlTreeStack.remove(avlTreeStack.root, d);
-
+	//double c = boost::math::tgamma((double)50);
+	double c = boost::math::tgamma_ratio(1, 1);
 	Reader reader("E:\\ShareShen\\gem5-stable\\m5out-se-x86\\cactusADM\\cactusADM-trace-part.txt", \
 		"E:\\ShareShen\\gem5-stable\\m5out-se-x86\\cactusADM\\cactusADM-avl-2assoc.txt");
 
