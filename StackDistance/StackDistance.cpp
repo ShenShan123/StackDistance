@@ -4,63 +4,59 @@
 #include "stdafx.h"
 #include "StackDistance.h"
 
-template <class B, class T>
-void Histogram<B, T>::sample(B x)
+template <class B, class Accur>
+void Histogram<B, Accur>::sample(B x)
 {
-	if (!binsMap[x]){ 
+	if (!binsMap[x])
 		binsMap[x] = 1;
-	}
 	else
 		++binsMap[x];
 	/* calculate the total num of sampling */
 	++samples;
 }
 
-template <class B, class T>
-bool Histogram<B, T>::mapToVector()
+template <class B, class Accur>
+bool Histogram<B, Accur>::mapToVector()
 {
 	std::map<long, B>::iterator last = binsMap.end();
 	/* point to the last element */
 	long maxSize = (--last)->first;
-
+	/* reserve some memory */
 	binsVec.reserve(maxSize);
 
-	long temp = 0;
 	std::map<long, B>::iterator it = binsMap.begin();
 
-	for (int i = 0; i <= maxSize; ++i)
-		if (temp == it->first) {
+	for (long i = 0; i <= maxSize; ++i)
+		if (i == it->first) {
 			binsVec.push_back(it->second);
 			++it;
-			++temp;
 		}
-		else {
+		else
 			binsVec.push_back(0);
-			++temp;
-		}
 
 		return binsVec.size() == last->first + 1;
 }
 
-template <class B, class T>
-void Histogram<B, T>::reuseDistToStackDisth()
+template <class B, class Accur>
+void Histogram<B, Accur>::reuseDistToStackDist()
 {
-	std::vector<double> frac;
+	std::vector<Accur> frac;
 	B temp = 0;
 	/* calculate the fraction of reuse distance
 	is greater than i */
 	for (int i = 0; i < binsVec.size(); ++i) {
 		temp += binsVec[i];
-		frac.push_back((double)(samples - temp) / samples);
+		frac.push_back((Accur)(samples - temp) / samples);
 	}
 
-	std::vector<T> transTemp(binsTra);
+	std::vector<B> transTemp(binsVec);
 
 	for (int i = 1; i < binsVec.size(); ++i) {
-		double sumFrac = 0.0;
+		Accur sumFrac = 0.0;
 		for (int j = 1; j <= i; ++j)
 			sumFrac += frac[j];
-		transTemp[(int)std::round(sumFrac)] += binsVec[i];
+		/* now we use the probabilities in RD to transform into SD, F(r)=s */
+		transTemp[(int) std::round(sumFrac)] += binsVec[i];
 	}
 	transTemp[0] = binsVec[0];
 
@@ -68,37 +64,12 @@ void Histogram<B, T>::reuseDistToStackDisth()
 	binsVec = transTemp;
 }
 
-template <class B, class T>
-void Histogram<B, T>::fullyToNWay(const int & cap, const int & blk, const int & assoc)
+template <class B, class Accur>
+void Histogram<B, Accur>::fullyToSetAssoc(const int & cap, const int & blk, const int & assoc)
 {
 	int setNum = cap / (blk * assoc);
 	/* p is a probability of mapping to a specific set */
-	double p = (double)1 / setNum;
-
-	binsTra.clear();
-
-	/* if a mem ref's stack distance <= assoc - 1, it is a cache hit */
-	for (int i = 0; i < assoc; ++i)
-		binsTra.push_back(binsVec[i]);
-
-	binsTra.resize(binsVec.size());
-
-	/* transition of each bar */
-	for (int i = assoc; i < binsVec.size(); ++i) {
-		if (!binsVec[i]) continue;
-
-		/* start from j=i, because i is the current bar */
-		for (int j = i; j >= 0; --j)
-			binsTra[j] += binsVec[i] * biDistribution(j, i, p);
-	}
-}
-
-template <class B, class T>
-void Histogram<B, T>::fullyToNWay2(const int & cap, const int & blk, const int & assoc)
-{
-	int setNum = cap / (blk * assoc);
-	/* p is a probability of mapping to a specific set */
-	double p = (double)1 / setNum;
+	Accur p = (Accur)1 / setNum;
 
 	binsTra.clear();
 
@@ -127,12 +98,12 @@ void Histogram<B, T>::fullyToNWay2(const int & cap, const int & blk, const int &
 	}
 }
 
-template <class B, class T>
-void Histogram<B, T>::fullyToNWay3(const int & cap, const int & blk, const int & assoc)
+template <class B, class Accur>
+void Histogram<B, Accur>::fullyToSetAssoc_Poisson(const int & cap, const int & blk, const int & assoc)
 {
 	int setNum = cap / (blk * assoc);
 	/* p is a probability of mapping to a specific set */
-	double p = (double)1 / setNum;
+	Accur p = (Accur)1 / setNum;
 
 	/* if a mem ref's stack distance <= assoc - 1, it is a cache hit */
 	for (int i = 0; i < assoc; ++i)
@@ -146,7 +117,7 @@ void Histogram<B, T>::fullyToNWay3(const int & cap, const int & blk, const int &
 
 		/* each bar j before the current, need to be added,
 		it's a binomial distribution */
-		boost::math::poisson_distribution<double> pois(i * p);
+		boost::math::poisson_distribution<Accur> pois(i * p);
 
 		/* start from j=i, because i is the current bar */
 		for (int j = i; j >= 0; --j)
@@ -154,23 +125,23 @@ void Histogram<B, T>::fullyToNWay3(const int & cap, const int & blk, const int &
 	}
 }
 
-template <class B, class T>
-void Histogram<B, T>::calMissRate(const int & assoc)
+template <class B, class Accur>
+void Histogram<B, Accur>::calMissRate(const int & assoc)
 {
 	misses = 0;
 
 	for (int i = assoc; i < binsTra.size(); ++i)
 		misses += (B)std::round(binsTra[i]);
-	missRate = (double)misses / samples;
+	missRate = (Accur)misses / samples;
 }
 
-template <class B, class T>
-void Histogram<B, T>::calMissRate(const int & cap, const int & blk)
+template <class B, class Accur>
+void Histogram<B, Accur>::calMissRate(const int & cap, const int & blk)
 {
 	int blkNum = cap / blk;
 	for (int i = blkNum; i < binsVec.size(); ++i)
 		misses += binsVec[i];
-	missRate = (double)misses / samples;
+	missRate = (Accur)misses / samples;
 }
 
 /* to calculate C(a, k) / C(b, k) */
@@ -194,12 +165,8 @@ inline double combinationRatio(int b, int a, int k)
 	return result;
 }
 
-inline double serialAccesPerm()
-{
-}
-
-template <class B, class T>
-void Histogram<B, T>::calMissRate(const int & assoc, const bool plru)
+template <class B, class Accur>
+void Histogram<B, Accur>::calMissRate(const int & assoc, const bool plru)
 {
 	if (!plru)
 		return;
@@ -216,46 +183,35 @@ void Histogram<B, T>::calMissRate(const int & assoc, const bool plru)
 	/* Now we calculate the approximate miss rate in an assumed LRU cache
 	   that the number of blocks equals to association,
 	   and references with stack distance <= log2(assoc) must be hit. */
-	double tempMisses = 0.0;
-	double tempHits = 0.0;
+	Accur tempMisses = 0.0;
+	Accur tempHits = 0.0;
 	for (int i = 0; i <= secureDist; ++i)
 		tempHits += binsTra[i];
 	for (int i = secureDist + 1; i < assoc; ++i)
 		tempMisses += binsTra[i];
-	double lastAccesMiss = tempMisses / (tempMisses + tempHits);
+	Accur lastAccesMiss = tempMisses / (tempMisses + tempHits);
 
-	double log = secureDist;
-	/* probability for accesses being in-order
-	   no need to use BOOST */
-	double inOrderAccesP = 1.0;
-	while (log)
-		inOrderAccesP *= log--;
-	inOrderAccesP = 1 / inOrderAccesP;
-
-	double missesD = 0.0;
-
+	Accur missesD = 0.0;
 	try {
 		for (int i = secureDist + 1; i < assoc; ++i) {
 			/* probability for eviction */
-			double p = 1.0;
+			Accur p = 1.0;
 			/* probability for accessing in-order */
-			double pInOrder = 1.0;
+			Accur pInOrder = 1.0;
 			/* accesses before current cousins */
-			double front = 0.0;
+			Accur front = 0.0;
 			for (int j = 0; j < secureDist; ++j) {
-				double c = combinationRatio(assoc - 1, assoc - 1 - (1 << j), i - 1);
+				Accur c = combinationRatio(assoc - 1, assoc - 1 - (1 << j), i - 1);
 				p *= 1 - c;
 
 				//pInOrder *= 1 - std::pow((double)j / (j + 1), (double)(1 << j) * (i - 1) / (assoc - 1));
 				
 				/* number of accesses in the serialization in same subtree */
-				double cousins = std::max(std::floor((1 << j) * (i - 1) / (assoc - 1)), 1.0);
+				Accur cousins = std::max(std::floor((1 << j) * (i - 1) / (assoc - 1)), 1.0);
 				/* tgammma_ratio(a, b) for (a-1)! / (b-1)! */
 				pInOrder *= cousins * boost::math::tgamma_ratio(front + cousins, front + 1);
 
 				front += cousins;
-				if (pInOrder < DBL_MIN)
-					throw std::exception("Error: calMissRate: underflow");
 			}
 
 			pInOrder /= boost::math::tgamma(i);
@@ -269,16 +225,16 @@ void Histogram<B, T>::calMissRate(const int & assoc, const bool plru)
 		return;
 	}
 
-	misses = std::ceil(missesD);
+	misses = std::floorl(missesD);
 	/* references with SD > assoc always miss. */
 	for (int i = assoc; i < binsVec.size(); ++i)
 		misses += binsTra[i];
 
-	missRate = (double)misses / samples;
+	missRate = (Accur)misses / samples;
 }
 
-template <class B, class T>
-void Histogram<B, T>::print(std::ofstream & file)
+template <class B, class Accur>
+void Histogram<B, Accur>::print(std::ofstream & file)
 {
 	file << "total_samples" << "\t" << samples << std::endl;
 	file << "total_misses" << "\t" << misses << std::endl;
@@ -489,7 +445,7 @@ void AvlTreeStack::balance(AvlNode<long> * & tree)
 	tree->updateHoles();
 }
 
-void AvlTreeStack::insert(uint64_t addr)
+void AvlTreeStack::insert(uint64_t addr, Histogram<> & hist)
 {
 	long & value = addrMap[addr];
 
@@ -511,12 +467,109 @@ void AvlTreeStack::insert(uint64_t addr)
 		int stackDist = index - value - curHoles - 1;
 		/* if the stack distance is large than MISS_BAR, the reference is definitely missed. */
 		stackDist = stackDist >= MISS_BAR ? MISS_BAR : stackDist;
-#ifdef AVL_HIST
 		hist.sample(stackDist);
-#endif
 	}
 
 	value = index;
+}
+
+void ReuseDist::calReuseDist(uint64_t addr, Histogram<> & hist)
+{
+	long & value = addrMap[addr];
+
+	++index;
+
+	/* value is 0 under cold miss */
+	if (!value) {
+		hist.sample(MISS_BAR);
+		value = index;
+		return;
+	}
+
+	/* update b of last reference */
+	if (value < index) {
+		int reuseDist = index - value - 1;
+		reuseDist = reuseDist >= MISS_BAR ? MISS_BAR : reuseDist;
+		hist.sample(reuseDist);
+	}
+
+	value = index;
+}
+
+int SampleStack::genRandom()
+{
+	// construct a trivial random generator engine from a time-based seed:
+	std::chrono::system_clock::rep seed = std::chrono::system_clock::now().time_since_epoch().count();
+	static std::mt19937 engine(seed);
+	static std::geometric_distribution<int> geom((double)expectSamples / sampleInter);
+	int rand = 0;
+	/* the random can not be 0 */
+	while (!rand)
+		rand = geom(engine);
+
+	return rand;
+}
+
+void SampleStack::calStackDist(uint64_t addr, Histogram<> & hist)
+{
+	++sampleCounter;
+	++statusCounter;
+
+	/* start sampling interval */
+	if (!isSampling && statusCounter == hibernInter) {
+		statusCounter = 0;
+		sampleCounter = 0;
+		isSampling = true;
+		randNum = genRandom();
+	}
+	/* start hibernation interval */
+	else if (isSampling && statusCounter == sampleInter) {
+		statusCounter = 0;
+		isSampling = false;
+	}
+
+	/* if we find a same address x in addrTable,
+	record its stack distance and the sampling of x is finished */
+	std::unordered_map<uint64_t, AddrSet>::iterator pos;
+	pos = addrTable.find(addr);
+	if (pos != addrTable.end()) {
+		hist.sample(pos->second.size() - 1);
+		addrTable.erase(addr);
+	}
+
+	std::unordered_map<uint64_t, AddrSet>::iterator it = addrTable.begin();
+
+	/* make sure the max size of addrTable */
+	if (addrTable.size() > 500) {
+		hist.sample(MISS_BAR);
+		addrTable.erase(it->first);
+	}
+
+	/* record unique mem references between the sampled address x */
+	for (it = addrTable.begin(); it != addrTable.end(); ) {
+		it->second.insert(addr);
+		/* if the set of sampled address x is too large,
+		erase it from  the table and record as MISS_BAR */
+		if (it->second.size() > MISS_BAR) {
+			std::unordered_map<uint64_t, AddrSet>::iterator eraseIt = it;
+			++it;
+			hist.sample(MISS_BAR);
+			addrTable.erase(eraseIt->first);
+		}
+		else
+			++it;
+	}
+
+	/* if it is time to do sampling */
+	if (isSampling && sampleCounter == randNum) {
+		/* it is a new sampled address */
+		assert(!addrTable[addr].size());
+		addrTable[addr].insert(0);
+		/* reset the sampleCounter and randNum to prepare next sample */
+		sampleCounter = 0;
+		randNum = genRandom();
+		//randNum = 1;
+	}
 }
 
 Reader::Reader(std::string _path, std::string _pathout) {
@@ -550,11 +603,11 @@ Reader::Reader(std::string _path, std::string _pathout) {
 		
 		if (temp == "interval") {
 			++interval;
-			if (interval == 2) {
+			if (interval == 1) {
 				start = true;
 				continue;
 			}
-			else if (interval > 2)
+			else if (interval > 1)
 				break;
 			else
 				continue;
@@ -578,15 +631,15 @@ Reader::Reader(std::string _path, std::string _pathout) {
 		addr = addr & (~mask);
 
 #ifdef STACK
-		avlTreeStack.insert(addr);
+		avlTreeStack.insert(addr, histogram);
 #endif
 
 #ifdef REUSE
-		reuseDist.calReuseDist(addr);
+		reuseDist.calReuseDist(addr, histogram);
 #endif
 
 #ifdef SAMPLE
-		sampleStack.calStackDist(addr);
+		sampleStack.calStackDist(addr, histogram);
 #endif
 	}
 	//listStack.print("E:\\ShareShen\\gem5-origin\\m5out-se-x86\\perlbench.txt");
@@ -595,32 +648,15 @@ Reader::Reader(std::string _path, std::string _pathout) {
 	int cap = 32 * 1024;
 	int blk = 64;
 	int assoc = 16;
-#ifdef STACK
-	bool succ = avlTreeStack.hist.mapToVector();
-	avlTreeStack.hist.fullyToNWay2(cap, blk, assoc);
-	avlTreeStack.hist.calMissRate(assoc);
-	avlTreeStack.hist.calMissRate(assoc, true);
-#endif
-
+	/* transforming and calculating miss rate */
+	bool succ = histogram.mapToVector();
+	histogram.fullyToSetAssoc(cap, blk, assoc);
 #ifdef REUSE
-	reuseDist.transHist();
-	reuseDist.hist.fullyToNWay2(cap, blk, assoc);
-	reuseDist.hist.calMissRate(assoc);
-	//reuseDist.hist.calMissRate(cap, blk);
-#endif
+	//histogram.reuseDistToStackDist();
+#endif // REUSE
 
-#ifdef SAMPLE
-	bool succ = sampleStack.hist.mapToVector();
-	clock_t starts = clock();
-	sampleStack.hist.fullyToNWay(cap, blk, assoc);
-	double t = clock() - starts;
-	sampleStack.hist.calMissRate(assoc);
-
-	start = clock();
-	sampleStack.hist.fullyToNWay2(cap, blk, assoc);
-	double t2 = clock() - starts;
-	sampleStack.hist.calMissRate(assoc);
-#endif // SAMPLE
+	histogram.calMissRate(assoc);
+	histogram.calMissRate(assoc, true);
 
 	file.close();
 	fileOut.close();
@@ -629,7 +665,10 @@ Reader::Reader(std::string _path, std::string _pathout) {
 int main()
 {
 	//double c = boost::math::tgamma((double)50);
-	double c = boost::math::tgamma_ratio(1, 1);
+	//double c = boost::math::tgamma_ratio(1, 1);
+	Histogram<int, double> hist;
+	hist.sample(6);
+	hist.mapToVector();
 	Reader reader("E:\\ShareShen\\gem5-stable\\m5out-se-x86\\cactusADM\\cactusADM-trace-part.txt", \
 		"E:\\ShareShen\\gem5-stable\\m5out-se-x86\\cactusADM\\cactusADM-avl-2assoc.txt");
 

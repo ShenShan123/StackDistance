@@ -18,60 +18,56 @@
 #include <stdexcept>
 #include <time.h>
 
-//#define REUSE
-#define STACK
+#define REUSE
+//#define STACK
 //#define SAMPLE
-#define AVL_HIST
 
 #define MISS_BAR 1024 * 2
 
-inline double power(const double base,const int index, double coef = 1.0);
-
-inline double biDistribution(const int m, const int n, const double p);
-
-template <class B, class T>
+/* for recording distribution into a Histogram, 
+   Accur is the accuracy of transforming calculation */
+template <class B = int, class Accur = double>
 class Histogram
 {
+	/* Histogram implemented by std::map */
 	std::map<long, B> binsMap;
+	/* Histogram implemented by std::vector */
 	std::vector<B> binsVec;
-	std::vector<T> binsTra;
+	/* Histogram implemented by std::vector, 
+	   after fully-to-set-associative cache transformation */
+	std::vector<Accur> binsTra;
 	/* number of sampling */
 	B samples;
 	/* total number of miss references */
 	B misses;
-	/* miss rate */
-	double missRate;
+	/* cache miss rate */
+	Accur missRate;
 
 public:
-	Histogram() : misses(0), missRate(0.0)
-		//binsVec(MISS_BAR + 1, 0), 
-		//binsTra(MISS_BAR + 1, 0) 
-	{};
+	Histogram() : misses(0), missRate(0.0) {};
 
 	~Histogram() {};
 
 	void sample(B x);
-
+	/* complete the histogram with std::vector, to fast calculation. */
 	bool mapToVector();
-	/* use self-defined binomial fucntion */
-	void fullyToNWay(const int & cap, const int & blk, const int & assoc);
-	/* use boost binomial distribution */
-	void fullyToNWay2(const int & cap, const int & blk, const int & assoc);
-	/* use boost poisson distribution */
-	void fullyToNWay3(const int & cap, const int & blk, const int & assoc);
-
-	void reuseDistToStackDisth();
+	/* use boost binomial distribution to do a fully-to-set-associative cache transformation */
+	void fullyToSetAssoc(const int & cap, const int & blk, const int & assoc);
+	/* use boost poisson distribution to do a fully-to-set-associative cache transformation */
+	void fullyToSetAssoc_Poisson(const int & cap, const int & blk, const int & assoc);
+	/* transform reuse distance distribution to stack distance distribution */
+	void reuseDistToStackDist();
 
 	void print(std::ofstream & file);
-
+	/* calculate the miss rate for LRU set associative cache */
 	void calMissRate(const int & assoc);
 
 	void calMissRate(const int & cap, const int & blk);
-
+	/* calculate the miss rate for PLRU set associative cache */
 	void calMissRate(const int & assoc, const bool plru);
 };
 
-template <class T>
+template <class Accur>
 class AvlNode
 {
 	//int holes;
@@ -81,18 +77,18 @@ class AvlNode
 	int holes;
 	/* this is the num of holes of entire right subtree. */
 	int rHoles;
-	std::pair<T, T> interval;
+	std::pair<Accur, Accur> interval;
 	int height;
-	AvlNode<T> * left;
-	AvlNode<T> * right;
+	AvlNode<Accur> * left;
+	AvlNode<Accur> * right;
 
 public:
-	AvlNode(T & a) : holes(1), rHoles(0), height(0), left(nullptr), right(nullptr)
+	AvlNode(Accur & a) : holes(1), rHoles(0), height(0), left(nullptr), right(nullptr)
 	{
 		interval = std::make_pair(a, a);
 	}
 
-	AvlNode(AvlNode<T> & n) : holes(n.holes), rHoles(n.rHoles), height(n.height), left(n.left), right(n.right)
+	AvlNode(AvlNode<Accur> & n) : holes(n.holes), rHoles(n.rHoles), height(n.height), left(n.left), right(n.right)
 	{
 		interval = n.interval;
 	}
@@ -105,7 +101,7 @@ public:
 		right = nullptr;
 	}
 
-	static int getHeight(AvlNode<T> * & node)
+	static int getHeight(AvlNode<Accur> * & node)
 	{
 		return node ? node->height : -1;
 	}
@@ -125,20 +121,17 @@ public:
 	}
 };
 
+/* for calculating stack distance distribution via AVL Tree, with no sampling*/
 class AvlTreeStack
 {
 	std::map <uint64_t, long> addrMap;
 	AvlNode<long> * root;
-	/* the index of references in memory trace */
+	/* the index of refs in memory trace */
 	long index;
+	/* holes between current ref and last ref with same address */
 	int curHoles;
 
 public:
-#ifdef AVL_HIST
-	/* hist contains the stack distance distribution */
-	Histogram<int, double> hist;
-#endif
-
 	AvlTreeStack(long & v) : index(0), curHoles(0)
 	{
 		root = new AvlNode<long>(v);
@@ -149,18 +142,6 @@ public:
 	~AvlTreeStack() { destroy(root); }
 
 	void destroy(AvlNode<long> * & tree);
-
-	/* just for get the final total unique mem refs(Stack Distance) */
-	const int size() const 
-	{	
-		/* there is no holes, 
-		   the num of unique mem refs is index */
-		//if (root == nullptr)
-		//	return index;
-		//else
-		//	return index - root->holes;
-		return addrMap.size();
-	}
 
 	void insert(AvlNode<long> * & tree, long & v);
 
@@ -179,8 +160,10 @@ public:
 	return tree;
 	}*/
 
+	/* find the minimal interval node */
 	AvlNode<long> * & findMin(AvlNode<long> * & tree);
-
+	
+	/* find the maximal interval node */
 	AvlNode<long> * & findMax(AvlNode<long> * & tree);
 
 	void remove(AvlNode<long> * & tree, std::pair<long, long> & inter);
@@ -191,9 +174,10 @@ public:
 
 	void balance(AvlNode<long> * & tree);
 
-	void insert(uint64_t addr);
+	void insert(uint64_t addr, Histogram<> & hist);
 };
 
+/* useless */
 class ListStack
 {
 	std::list<uint64_t> addrList;
@@ -208,51 +192,27 @@ public:
 	void calStackDist(uint64_t addr);
 };
 
+/* do reuse distance statistics */
 class ReuseDist
 {
 	std::map<uint64_t, long> addrMap;
 	long index;
 
 public:
-	Histogram<int, int> hist;
-
 	ReuseDist() {};
 	~ReuseDist() {};
 
-	void calReuseDist(uint64_t addr)
-	{
-		long & value = addrMap[addr];
-
-		++index;
-
-		/* value is 0 under cold miss */
-		if (!value) {
-			hist.sample(MISS_BAR);
-			value = index;
-			return;
-		}
-
-		/* update b of last reference */
-		if (value < index) {
-			int reuseDist = index - value - 1;
-			reuseDist = reuseDist >= MISS_BAR ? MISS_BAR : reuseDist;
-			hist.sample(reuseDist);
-		}
-
-		value = index;
-	}
-
-	void transHist()
-	{
-		hist.reuseDistToStackDisth();
-	}
+	void calReuseDist(uint64_t addr, Histogram<> & hist);
 };
 
-template<class A>
+/* stack distance staticstics with sampling */
 class SampleStack
 {
 	long index;
-	std::unordered_map<uint64_t, A> addrTable;
+
+	typedef std::unordered_set<uint64_t> AddrSet;
+	/* each watchpoint has a set to keep the unique mem refs */
+	std::unordered_map<uint64_t, AddrSet> addrTable;
 	int randNum;
 	int sampleCounter;
 	int expectSamples;
@@ -262,87 +222,13 @@ class SampleStack
 	bool isSampling;
 
 public:
-	Histogram<int, double> hist;
-
 	SampleStack() : sampleCounter(0), expectSamples(2000), hibernInter(3000000), 
 		            sampleInter(1000000), isSampling(false), statusCounter(0) {};
 
-	int genRandom()
-	{
-		// construct a trivial random generator engine from a time-based seed:
-		int seed = std::chrono::system_clock::now().time_since_epoch().count();
-		static std::mt19937 engine(seed);
-		static std::geometric_distribution<int> geom((double)expectSamples / sampleInter);
-		int rand = 0;
-		/* the random can not be 0 */
-		while (!rand)
-			rand = geom(engine);
+	/* to generate a random number */
+	int genRandom();
 
-		return rand;
-	}
-
-	void calStackDist(uint64_t addr)
-	{
-		++sampleCounter;
-		++statusCounter;
-
-		/* start sampling interval */
-		if (!isSampling && statusCounter == hibernInter) {
-			statusCounter = 0;
-			sampleCounter = 0;
-			isSampling = true;
-			randNum = genRandom();
-		}
-		/* start hibernation interval */
-		else if (isSampling && statusCounter == sampleInter) {
-			statusCounter = 0;
-			isSampling = false;
-		}
-
-		/* if we find a same address x in addrTable,
-		   record its stack distance and
-		   the sampling of x is finished */
-		std::unordered_map<uint64_t, A>::iterator pos;
-		pos = addrTable.find(addr);
-		if (pos != addrTable.end()) {
-			hist.sample(pos->second.size() - 1);
-			addrTable.erase(addr);
-		}
-
-		std::unordered_map<uint64_t, A>::iterator it = addrTable.begin();
-
-		/* make sure the max size of addrTable */
-		if (addrTable.size() > 500) {
-			hist.sample(MISS_BAR);
-			addrTable.erase(it->first);
-		}
-
-		/* record unique mem references between the sampled address x */
-		for (it = addrTable.begin(); it != addrTable.end(); ) {
-			it->second.insert(addr);
-			/* if the set of sampled address x is too large,
-			   erase it from  the table and record as MISS_BAR */
-			if (it->second.size() > MISS_BAR) {
-				std::unordered_map<uint64_t, A>::iterator eraseIt = it;
-				++it;
-				hist.sample(MISS_BAR);
-				addrTable.erase(eraseIt->first);
-			}
-			else
-				++it;
-		}
-
-		/* if it is time to do sampling */
-		if (isSampling && sampleCounter == randNum) {
-			/* it is a new sampled address */
-			assert(!addrTable[addr].size());
-			addrTable[addr].insert(0);
-			/* reset the sampleCounter and randNum to prepare next sample */
-			sampleCounter = 0;
-			randNum = genRandom();
-			//randNum = 1;
-		}
-	}
+	void calStackDist(uint64_t addr, Histogram<> & hist);
 };
 
 class Reader
@@ -357,10 +243,9 @@ private:
 #endif
 
 #ifdef SAMPLE
-	SampleStack<AvlTreeStack> sampleStack;
+	SampleStack sampleStack;
 #endif
-
-	ListStack listStack;
+	Histogram<> histogram;
 
 public:
 	Reader(std::string _path, std::string _pathout);
