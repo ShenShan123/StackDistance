@@ -18,8 +18,8 @@
 #include <stdexcept>
 #include <time.h>
 
-#define REUSE
-//#define STACK
+//#define REUSE
+#define STACK
 //#define SAMPLE
 
 #define MISS_BAR 1024 * 2
@@ -174,7 +174,7 @@ public:
 
 	void balance(AvlNode<long> * & tree);
 
-	void insert(uint64_t addr, Histogram<> & hist);
+	void calReuseDist(uint64_t addr, Histogram<> & hist);
 };
 
 /* useless */

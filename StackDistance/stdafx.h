@@ -14,5 +14,7 @@
 #include <boost/random.hpp>
 #include <boost/math/special_functions/gamma.hpp>
 
+//#include <NTL/RR.h>
+
 
 // TODO: reference additional headers your program requires here

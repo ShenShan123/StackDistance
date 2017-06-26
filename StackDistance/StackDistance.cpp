@@ -3,6 +3,210 @@
 
 #include "stdafx.h"
 #include "StackDistance.h"
+#include "NtlTest.h"
+
+//template <class T, class Lanczos, class Policy>
+//T ibeta_power_terms(T a,
+//	T b,
+//	T x,
+//	T y,)
+//{
+//	T result;
+//
+//	T c = a + b;
+//
+//	// combine power terms with Lanczos approximation:
+//	T agh = static_cast<T>(a + G - 0.5);
+//	T bgh = static_cast<T>(b + G - 0.5);
+//	T cgh = static_cast<T>(c + G - 0.5);
+//	result = lanzocsConstWithE(c) / (lanzocsConstWithE(a) * lanzocsConstWithE(b));
+//	//result *= prefix;
+//	// combine with the leftover terms from the Lanczos approximation:
+//	result *= sqrt(bgh / boost::math::constants::e<T>());
+//	result *= sqrt(agh / cgh);
+//
+//	// l1 and l2 are the base of the exponents minus one:
+//	T l1 = (x * b - y * agh) / agh;
+//	T l2 = (y * a - x * bgh) / bgh;
+//	if (((std::min)(fabs(l1), fabs(l2)) < 0.2))
+//	{
+//		// when the base of the exponent is very near 1 we get really
+//		// gross errors unless extra care is taken:
+//		if ((l1 * l2 > 0) || ((std::min)(a, b) < 1))
+//		{
+//			//
+//			// This first branch handles the simple cases where either: 
+//			//
+//			// * The two power terms both go in the same direction 
+//			// (towards zero or towards infinity).  In this case if either 
+//			// term overflows or underflows, then the product of the two must 
+//			// do so also.  
+//			// *Alternatively if one exponent is less than one, then we 
+//			// can't productively use it to eliminate overflow or underflow 
+//			// from the other term.  Problems with spurious overflow/underflow 
+//			// can't be ruled out in this case, but it is *very* unlikely 
+//			// since one of the power terms will evaluate to a number close to 1.
+//			//
+//			if (fabs(l1) < 0.1)
+//			{
+//				result *= exp(a * boost::math::log1p(l1, pol));
+//				BOOST_MATH_INSTRUMENT_VARIABLE(result);
+//			}
+//			else
+//			{
+//				result *= pow((x * cgh) / agh, a);
+//				BOOST_MATH_INSTRUMENT_VARIABLE(result);
+//			}
+//			if (fabs(l2) < 0.1)
+//			{
+//				result *= exp(b * boost::math::log1p(l2, pol));
+//				BOOST_MATH_INSTRUMENT_VARIABLE(result);
+//			}
+//			else
+//			{
+//				result *= pow((y * cgh) / bgh, b);
+//				BOOST_MATH_INSTRUMENT_VARIABLE(result);
+//			}
+//		}
+//		else if ((std::max)(fabs(l1), fabs(l2)) < 0.5)
+//		{
+//			//
+//			// Both exponents are near one and both the exponents are 
+//			// greater than one and further these two 
+//			// power terms tend in opposite directions (one towards zero, 
+//			// the other towards infinity), so we have to combine the terms 
+//			// to avoid any risk of overflow or underflow.
+//			//
+//			// We do this by moving one power term inside the other, we have:
+//			//
+//			//    (1 + l1)^a * (1 + l2)^b
+//			//  = ((1 + l1)*(1 + l2)^(b/a))^a
+//			//  = (1 + l1 + l3 + l1*l3)^a   ;  l3 = (1 + l2)^(b/a) - 1
+//			//                                    = exp((b/a) * log(1 + l2)) - 1
+//			//
+//			// The tricky bit is deciding which term to move inside :-)
+//			// By preference we move the larger term inside, so that the
+//			// size of the largest exponent is reduced.  However, that can
+//			// only be done as long as l3 (see above) is also small.
+//			//
+//			bool small_a = a < b;
+//			T ratio = b / a;
+//			if ((small_a && (ratio * l2 < 0.1)) || (!small_a && (l1 / ratio > 0.1)))
+//			{
+//				T l3 = boost::math::expm1(ratio * boost::math::log1p(l2, pol), pol);
+//				l3 = l1 + l3 + l3 * l1;
+//				l3 = a * boost::math::log1p(l3, pol);
+//				result *= exp(l3);
+//				BOOST_MATH_INSTRUMENT_VARIABLE(result);
+//			}
+//			else
+//			{
+//				T l3 = boost::math::expm1(boost::math::log1p(l1, pol) / ratio, pol);
+//				l3 = l2 + l3 + l3 * l2;
+//				l3 = b * boost::math::log1p(l3, pol);
+//				result *= exp(l3);
+//				BOOST_MATH_INSTRUMENT_VARIABLE(result);
+//			}
+//		}
+//		else if (fabs(l1) < fabs(l2))
+//		{
+//			// First base near 1 only:
+//			T l = a * boost::math::log1p(l1, pol)
+//				+ b * log((y * cgh) / bgh);
+//			if ((l <= tools::log_min_value<T>()) || (l >= tools::log_max_value<T>()))
+//			{
+//				l += log(result);
+//				if (l >= tools::log_max_value<T>())
+//					return policies::raise_overflow_error<T>(function, 0, pol);
+//				result = exp(l);
+//			}
+//			else
+//				result *= exp(l);
+//			BOOST_MATH_INSTRUMENT_VARIABLE(result);
+//		}
+//		else
+//		{
+//			// Second base near 1 only:
+//			T l = b * boost::math::log1p(l2, pol)
+//				+ a * log((x * cgh) / agh);
+//			if ((l <= tools::log_min_value<T>()) || (l >= tools::log_max_value<T>()))
+//			{
+//				l += log(result);
+//				if (l >= tools::log_max_value<T>())
+//					return policies::raise_overflow_error<T>(function, 0, pol);
+//				result = exp(l);
+//			}
+//			else
+//				result *= exp(l);
+//			BOOST_MATH_INSTRUMENT_VARIABLE(result);
+//		}
+//	}
+//	else
+//	{
+//		// general case:
+//		T b1 = (x * cgh) / agh;
+//		T b2 = (y * cgh) / bgh;
+//		l1 = a * log(b1);
+//		l2 = b * log(b2);
+//		BOOST_MATH_INSTRUMENT_VARIABLE(b1);
+//		BOOST_MATH_INSTRUMENT_VARIABLE(b2);
+//		BOOST_MATH_INSTRUMENT_VARIABLE(l1);
+//		BOOST_MATH_INSTRUMENT_VARIABLE(l2);
+//		if ((l1 >= tools::log_max_value<T>())
+//			|| (l1 <= tools::log_min_value<T>())
+//			|| (l2 >= tools::log_max_value<T>())
+//			|| (l2 <= tools::log_min_value<T>())
+//			)
+//		{
+//			// Oops, under/overflow, sidestep if we can:
+//			if (a < b)
+//			{
+//				T p1 = pow(b2, b / a);
+//				T l3 = a * (log(b1) + log(p1));
+//				if ((l3 < tools::log_max_value<T>())
+//					&& (l3 > tools::log_min_value<T>()))
+//				{
+//					result *= pow(p1 * b1, a);
+//				}
+//				else
+//				{
+//					l2 += l1 + log(result);
+//					if (l2 >= tools::log_max_value<T>())
+//						return policies::raise_overflow_error<T>(function, 0, pol);
+//					result = exp(l2);
+//				}
+//			}
+//			else
+//			{
+//				T p1 = pow(b1, a / b);
+//				T l3 = (log(p1) + log(b2)) * b;
+//				if ((l3 < tools::log_max_value<T>())
+//					&& (l3 > tools::log_min_value<T>()))
+//				{
+//					result *= pow(p1 * b2, b);
+//				}
+//				else
+//				{
+//					l2 += l1 + log(result);
+//					if (l2 >= tools::log_max_value<T>())
+//						return policies::raise_overflow_error<T>(function, 0, pol);
+//					result = exp(l2);
+//				}
+//			}
+//			BOOST_MATH_INSTRUMENT_VARIABLE(result);
+//		}
+//		else
+//		{
+//			// finally the normal case:
+//			result *= pow(b1, a) * pow(b2, b);
+//			BOOST_MATH_INSTRUMENT_VARIABLE(result);
+//		}
+//	}
+//
+//	BOOST_MATH_INSTRUMENT_VARIABLE(result);
+//
+//	return result;
+//}
 
 template <class B, class Accur>
 void Histogram<B, Accur>::sample(B x)
@@ -130,17 +334,15 @@ void Histogram<B, Accur>::calMissRate(const int & assoc)
 {
 	misses = 0;
 
-	for (int i = assoc; i < binsTra.size(); ++i)
-		misses += (B)std::round(binsTra[i]);
-	missRate = (Accur)misses / samples;
-}
+	/* If binsTra is empty, we use binsVec to calculate the miss rate. */
+	if (binsTra.empty())
+		for (int i = assoc; i < binsVec.size(); ++i)
+			misses += (B)std::round(binsVec[i]);
+	else 
+		for (int i = assoc; i < binsTra.size(); ++i)
+			misses += (B)std::round(binsTra[i]);
 
-template <class B, class Accur>
-void Histogram<B, Accur>::calMissRate(const int & cap, const int & blk)
-{
-	int blkNum = cap / blk;
-	for (int i = blkNum; i < binsVec.size(); ++i)
-		misses += binsVec[i];
+
 	missRate = (Accur)misses / samples;
 }
 
@@ -445,7 +647,7 @@ void AvlTreeStack::balance(AvlNode<long> * & tree)
 	tree->updateHoles();
 }
 
-void AvlTreeStack::insert(uint64_t addr, Histogram<> & hist)
+void AvlTreeStack::calReuseDist(uint64_t addr, Histogram<> & hist)
 {
 	long & value = addrMap[addr];
 
@@ -453,9 +655,6 @@ void AvlTreeStack::insert(uint64_t addr, Histogram<> & hist)
 
 	/* value is 0 under cold miss */
 	if (!value) {
-#ifdef AVL_HIST
-		hist.sample(MISS_BAR);
-#endif
 		value = index;
 		return;
 	}
@@ -540,7 +739,7 @@ void SampleStack::calStackDist(uint64_t addr, Histogram<> & hist)
 	std::unordered_map<uint64_t, AddrSet>::iterator it = addrTable.begin();
 
 	/* make sure the max size of addrTable */
-	if (addrTable.size() > 500) {
+	if (addrTable.size() > expectSamples) {
 		hist.sample(MISS_BAR);
 		addrTable.erase(it->first);
 	}
@@ -631,7 +830,7 @@ Reader::Reader(std::string _path, std::string _pathout) {
 		addr = addr & (~mask);
 
 #ifdef STACK
-		avlTreeStack.insert(addr, histogram);
+		avlTreeStack.calReuseDist(addr, histogram);
 #endif
 
 #ifdef REUSE
@@ -650,11 +849,13 @@ Reader::Reader(std::string _path, std::string _pathout) {
 	int assoc = 16;
 	/* transforming and calculating miss rate */
 	bool succ = histogram.mapToVector();
-	histogram.fullyToSetAssoc(cap, blk, assoc);
+
 #ifdef REUSE
-	//histogram.reuseDistToStackDist();
+	histogram.reuseDistToStackDist();
+	histogram.calMissRate(512);
 #endif // REUSE
 
+	histogram.fullyToSetAssoc(cap, blk, assoc);
 	histogram.calMissRate(assoc);
 	histogram.calMissRate(assoc, true);
 
@@ -664,11 +865,15 @@ Reader::Reader(std::string _path, std::string _pathout) {
 
 int main()
 {
-	//double c = boost::math::tgamma((double)50);
-	//double c = boost::math::tgamma_ratio(1, 1);
-	Histogram<int, double> hist;
-	hist.sample(6);
-	hist.mapToVector();
+	//vector a = generateA();
+	//double z = 7.0;
+	//double c = lanzocsConstWithE(z);
+	//double d = boost::math::lanczos::lanczos13m53::lanczos_sum_expG_scaled(z);
+	//boost::math::binomial binom(100, 0.4);
+	//double g = boost::math::pdf(binom, 20);
+
+
+
 	Reader reader("E:\\ShareShen\\gem5-stable\\m5out-se-x86\\cactusADM\\cactusADM-trace-part.txt", \
 		"E:\\ShareShen\\gem5-stable\\m5out-se-x86\\cactusADM\\cactusADM-avl-2assoc.txt");
 
