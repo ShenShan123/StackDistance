@@ -269,33 +269,47 @@ void Histogram<B, Accur>::reuseDistToStackDist()
 }
 
 template <class B, class Accur>
-void Histogram<B, Accur>::fullyToSetAssoc(const int & cap, const int & blk, const int & assoc)
+Accur Histogram<B, Accur>::fullyToSetAssoc(const int & cap, const int & blk, const int & assoc)
 {
 	int setNum = cap / (blk * assoc);
 	/* p is a probability of mapping to a specific set */
 	Accur p = (Accur)1 / setNum;
-
 	binsTra.clear();
 
-	/* if a mem ref's stack distance <= assoc - 1, it is a cache hit */
-	for (int i = 0; i < assoc; ++i)
+	int tempAssoc = assoc - 1;
+	/* secureDist = log2(assoc),
+	the least not evcited SD, called secure distance */
+	int secureDist = 0;
+	while (tempAssoc) {
+		tempAssoc >>= 1;
+		++secureDist;
+	}
+
+	/* if a mem ref's SD <= secureDist, it is a cache hit, 
+	   we don't need to transform these bar */
+	for (int i = 0; i <= secureDist; ++i)
 		binsTra.push_back(binsVec[i]);
-	
 	binsTra.resize(binsVec.size());
 
 	try {
 		/* transition of each bar */
-		for (int i = assoc; i < binsVec.size(); ++i) {
+		for (int i = secureDist + 1; i < binsVec.size(); ++i) {
 			if (!binsVec[i]) continue;
 
 			/* each bar j before the current, need to be added,
 			it's a binomial distribution */
 			boost::math::binomial binom(i, p);
 
-			/* start from j=i, because i is the current bar */
-			for (int j = i; j >= 0; --j)
-				binsTra[j] += binsVec[i] * boost::math::pdf(binom, j);
+			/* start from j=0, ref with SD >= assoc + secureDist is definitely miss in PLRU cache, 
+			   so we don't need to calculate these bars */
+			for (int j = 0; j <= i && j < assoc + secureDist; ++j)
+				binsTra[j] += binsVec[i] * boost::math::pdf(binom, (Accur)j);
 		}
+
+		hits = 0;
+		for (int i = 0; i < assoc; ++i)
+			hits += (B)std::round(binsTra[i]);
+		return 1 - (Accur)hits / samples;
 	}
 	catch (std::exception e) {
 		std::cout << e.what() << std::endl;
@@ -330,20 +344,118 @@ void Histogram<B, Accur>::fullyToSetAssoc_Poisson(const int & cap, const int & b
 }
 
 template <class B, class Accur>
-void Histogram<B, Accur>::calMissRate(const int & assoc)
+Accur Histogram<B, Accur>::calLruMissRate(const int & cap, const int & blk, const int & assoc)
 {
-	misses = 0;
+	hits = 0;
 
-	/* If binsTra is empty, we use binsVec to calculate the miss rate. */
-	if (binsTra.empty())
-		for (int i = assoc; i < binsVec.size(); ++i)
-			misses += (B)std::round(binsVec[i]);
-	else 
-		for (int i = assoc; i < binsTra.size(); ++i)
-			misses += (B)std::round(binsTra[i]);
+	int setNum = cap / (blk * assoc);
+	/* p is a probability of mapping to a specific set */
+	Accur p = (Accur)1 / setNum;
 
+	/* we use cdf to calculate the probability that 
+	   other SDs will be less than assoc after transforming */
+	for (int i = assoc; i < binsVec.size(); ++i) {
+		boost::math::binomial binom(i, p);
+		hits += (B)std::round(binsVec[i] * boost::math::cdf(binom, (Accur)assoc - 1));
+	}
+	/* add up the SD < assoc fraction */
+	for (int i = 0; i < assoc; ++i)
+		hits += binsVec[i];
 
-	missRate = (Accur)misses / samples;
+	missRate = 1 - (Accur)hits / samples;
+	return missRate;
+}
+
+/* PLRU hit function is a piecewise linear function. */
+template <class B, class Accur>
+Accur Histogram<B, Accur>::calPlruMissRate(const int & cap, const int & blk, const int & assoc)
+{
+	fullyToSetAssoc(cap, blk, assoc);
+
+	int tempAssoc = assoc - 1;
+	/* secureDist = log2(assoc),
+	the least not evcited distance, called secure distance */
+	int secureDist = 0;
+	while (tempAssoc) {
+		tempAssoc >>= 1;
+		++secureDist;
+	}
+
+	/* we assume that refs with SD <= secureDist are hits, SD > secureDist is a miss,
+	   so the miss rate is SD(secureDist + 1) / sum(SD, secureDist + 1, 0). */
+	Accur tempMisses = 0.0;
+	Accur tempHits = 0.0;
+	for (int i = 0; i <= secureDist; ++i)
+		tempHits += binsTra[i];
+	tempMisses = binsTra[secureDist + 1];
+	Accur lastAccesMiss = tempMisses / (tempMisses + tempHits);
+
+	//Accur tempMisses = 0.0;
+	//Accur tempHits = 0.0;
+	//for (int i = 0; i <= secureDist; ++i)
+	//	tempHits += binsTra[i];
+	//for (int i = secureDist + 1; i < assoc; ++i)
+	//	tempMisses += binsTra[i];
+	//Accur lastAccesMiss = tempMisses / (tempMisses + tempHits);
+
+	tempAssoc = assoc - 1;
+	/* p1, a point with SD=secureDist+1 */
+	Accur p1 = 1.0;
+	/* 2^0 * 2^1 * ... * 2^(secureDist-1) / A(assoc-1, secureDist) */
+	for (int i = 0; i < secureDist; ++i) {
+		p1 *= (1 << i);
+		p1 /= tempAssoc--;
+	}
+	/* the last ref is a miss */
+	p1 *= lastAccesMiss;
+	/* hit probability */
+	p1 = 1 - p1;
+
+	/* p2, a point with SD=assoc */
+	Accur p2 = 1.0;
+	/* accesses before current cousins */
+	Accur front = 0.0;
+	try {
+		/* calculate the permutations */
+		for (int j = 0; j < secureDist; ++j) {
+			/* number of accesses in the serialization in same subtree */
+			Accur cousins = (1 << j);
+			/* tgammma_ratio(a, b) for (a-1)! / (b-1)! */
+			p2 *= cousins * boost::math::tgamma_ratio(front + cousins, front + 1);
+			front += cousins;
+		}
+		/* divide all possible permutation */
+		p2 /= boost::math::tgamma((Accur)assoc);
+		/* hit probability */
+		p2 = 1 - p2;
+	}
+	catch (std::exception e) {
+		std::cout << e.what() << std::endl;
+	}
+
+	hits = 0;
+	/* the gradient of first piece */
+	Accur k1 = (p2 - p1) / (assoc - secureDist - 1);
+	for (int i = secureDist + 1; i <= assoc; ++i) {
+		Accur y = k1 * (i - secureDist - 1) + p1;
+		hits += y * binsTra[i];
+		std::cout << y << std::endl;
+	}
+	/* p3, with SD=assoc + assoc/2 - 2, hit probability */
+	Accur p3 = 1 / (Accur)(assoc - 1);
+	/* the gradient of second piece */
+	Accur k2 = (p3 - p2) / (assoc / 2 - 2);
+	for (int i = assoc + 1; i <= assoc * 3 / 2 - 2; ++i) {
+		Accur y = k2 * (i - assoc) + p2;
+		hits += y * binsTra[i];
+		std::cout << y << std::endl;
+	}
+	
+	for (int i = 0; i <= secureDist; ++i)
+		hits += binsTra[i];
+
+	missRate = 1 - (Accur)hits / samples;
+	return missRate;
 }
 
 /* to calculate C(a, k) / C(b, k) */
@@ -368,71 +480,76 @@ inline double combinationRatio(int b, int a, int k)
 }
 
 template <class B, class Accur>
-void Histogram<B, Accur>::calMissRate(const int & assoc, const bool plru)
+Accur Histogram<B, Accur>::calMissRate(const int & cap, const int & blk, const int & assoc, const bool plru)
 {
 	if (!plru)
-		return;
+		return calLruMissRate(cap, blk, assoc);
+	else
+		return calPlruMissRate(cap, blk, assoc);
 
-	int tempAssoc = assoc - 1;
-	/* secureDist = log2(assoc),
-	   the least not evcited distance, called secure distance */
-	int secureDist = 0;
-	while (tempAssoc) {
-		tempAssoc >>= 1;
-		++secureDist;
-	}
+	////fullyToSetAssoc(cap, blk, assoc);
 
-	/* Now we calculate the approximate miss rate in an assumed LRU cache
-	   that the number of blocks equals to association,
-	   and references with stack distance <= log2(assoc) must be hit. */
-	Accur tempMisses = 0.0;
-	Accur tempHits = 0.0;
-	for (int i = 0; i <= secureDist; ++i)
-		tempHits += binsTra[i];
-	for (int i = secureDist + 1; i < assoc; ++i)
-		tempMisses += binsTra[i];
-	Accur lastAccesMiss = tempMisses / (tempMisses + tempHits);
+	//int tempAssoc = assoc - 1;
+	///* secureDist = log2(assoc),
+	//   the least not evcited distance, called secure distance */
+	//int secureDist = 0;
+	//while (tempAssoc) {
+	//	tempAssoc >>= 1;
+	//	++secureDist;
+	//}
 
-	Accur missesD = 0.0;
-	try {
-		for (int i = secureDist + 1; i < assoc; ++i) {
-			/* probability for eviction */
-			Accur p = 1.0;
-			/* probability for accessing in-order */
-			Accur pInOrder = 1.0;
-			/* accesses before current cousins */
-			Accur front = 0.0;
-			for (int j = 0; j < secureDist; ++j) {
-				Accur c = combinationRatio(assoc - 1, assoc - 1 - (1 << j), i - 1);
-				p *= 1 - c;
+	///* Now we calculate the approximate miss rate in an assumed LRU cache
+	//   that the number of blocks equals to association,
+	//   and references with stack distance <= log2(assoc) must be hit. */
+	////Accur tempMisses = 0.0;
+	////Accur tempHits = 0.0;
+	////for (int i = 0; i <= secureDist; ++i)
+	////	tempHits += binsTra[i];
+	////for (int i = secureDist + 1; i < assoc; ++i)
+	////	tempMisses += binsTra[i];
+	////Accur lastAccesMiss = tempMisses / (tempMisses + tempHits);
 
-				//pInOrder *= 1 - std::pow((double)j / (j + 1), (double)(1 << j) * (i - 1) / (assoc - 1));
-				
-				/* number of accesses in the serialization in same subtree */
-				Accur cousins = std::max(std::floor((1 << j) * (i - 1) / (assoc - 1)), 1.0);
-				/* tgammma_ratio(a, b) for (a-1)! / (b-1)! */
-				pInOrder *= cousins * boost::math::tgamma_ratio(front + cousins, front + 1);
+	//Accur lastAccesMiss = 0.15;
+	//Accur missesD = 0.0;
+	//try {
+	//	for (int i = secureDist + 1; i < assoc; ++i) {
+	//		/* probability for eviction */
+	//		Accur p = 1.0;
+	//		/* probability for accessing in-order */
+	//		Accur pInOrder = 1.0;
+	//		/* accesses before current cousins */
+	//		Accur front = 0.0;
+	//		for (int j = 0; j < secureDist; ++j) {
+	//			Accur c = combinationRatio(assoc - 1, assoc - 1 - (1 << j), i - 1);
+	//			p *= 1 - c;
+	//			/* number of accesses in the serialization in same subtree */
+	//			Accur cousins = std::max(std::floor((1 << j) * (i - 1) / (assoc - 1)), 1.0);
+	//			/* tgammma_ratio(a, b) for (a-1)! / (b-1)! */
+	//			pInOrder *= cousins * boost::math::tgamma_ratio(front + cousins, front + 1);
 
-				front += cousins;
-			}
+	//			front += cousins;
+	//		}
+	//		/* divide all possible permutation */
+	//		pInOrder /= boost::math::tgamma(i);
+	//		if (pInOrder >= 1)
+	//			throw std::exception("Error: calMissRate: wrong calculation");
+	//		missesD += p * pInOrder * lastAccesMiss; //* binsTra[i];
+	//		std::cout << 1 - p * pInOrder * lastAccesMiss << std::endl;
+	//	}
+	//}
+	//catch (std::exception e) {
+	//	std::cout << e.what() << std::endl;
+	//	return -INFINITY;
+	//}
 
-			pInOrder /= boost::math::tgamma(i);
-			if (pInOrder >= 1)
-				throw std::exception("Error: calMissRate: wrong calculation");
-			missesD += binsTra[i] * p * pInOrder * lastAccesMiss;
-		}
-	}
-	catch (std::exception e) {
-		std::cout << e.what() << std::endl;
-		return;
-	}
+	//misses = std::floorl(missesD);
+	///* references with SD > assoc always miss. */
+	//for (int i = assoc; i < binsVec.size(); ++i)
+	//	misses += binsTra[i];
 
-	misses = std::floorl(missesD);
-	/* references with SD > assoc always miss. */
-	for (int i = assoc; i < binsVec.size(); ++i)
-		misses += binsTra[i];
+	//missRate = (Accur)misses / samples;
 
-	missRate = (Accur)misses / samples;
+	//return missRate;
 }
 
 template <class B, class Accur>
@@ -656,6 +773,7 @@ void AvlTreeStack::calReuseDist(uint64_t addr, Histogram<> & hist)
 	/* value is 0 under cold miss */
 	if (!value) {
 		value = index;
+		hist.sample(MISS_BAR);
 		return;
 	}
 
@@ -793,6 +911,8 @@ Reader::Reader(std::string _path, std::string _pathout) {
 	bool start = false;
 
 	std::cout << "Reading files and calculate stack distances..." << std::endl;
+	/* the index of interval */
+	int i = 2;
 
 	while (std::getline(file, line)) {
 		std::stringstream lineStream(line);
@@ -802,11 +922,11 @@ Reader::Reader(std::string _path, std::string _pathout) {
 		
 		if (temp == "interval") {
 			++interval;
-			if (interval == 1) {
+			if (interval == i) {
 				start = true;
 				continue;
 			}
-			else if (interval > 1)
+			else if (interval > i)
 				break;
 			else
 				continue;
@@ -855,12 +975,46 @@ Reader::Reader(std::string _path, std::string _pathout) {
 	histogram.calMissRate(512);
 #endif // REUSE
 
-	histogram.fullyToSetAssoc(cap, blk, assoc);
-	histogram.calMissRate(assoc);
-	histogram.calMissRate(assoc, true);
+	double lruMissRate = histogram.calMissRate(cap, blk, assoc, false);
+	//double lruTraMissRate = histogram.fullyToSetAssoc(cap, blk, assoc);
+	double plruMissRate2 = histogram.calMissRate(cap, blk, assoc, true);
+	double plruMissRate = histogram.calMissRate(cap, blk, assoc, true);
 
 	file.close();
 	fileOut.close();
+}
+
+void missProb(int assoc)
+{
+	int tempAssoc = assoc - 1;
+	/* secureDist = log2(assoc),
+	the least not evcited distance, called secure distance */
+	int secureDist = 0;
+	while (tempAssoc) {
+		tempAssoc >>= 1;
+		++secureDist;
+	}
+
+	double p = 1.0;
+	tempAssoc = assoc - 1;
+
+	for (int i = 0; i < secureDist; ++i) {
+		p *= (1 << i);
+		p /= tempAssoc--;
+	}
+
+	double missRate = 0.2;
+	p *= missRate;
+	std::cout << 1 - p << std::endl;
+
+	for (int i = 0; i < assoc * 3 / 2; ++i) {
+		p = (1 - p);
+		double t = std::pow(0.5, secureDist);
+		p *= t;
+		missRate -= 0.02;
+		p *= missRate;
+		std::cout << 1 - p << std::endl;
+	}
 }
 
 int main()
@@ -871,9 +1025,9 @@ int main()
 	//double d = boost::math::lanczos::lanczos13m53::lanczos_sum_expG_scaled(z);
 	//boost::math::binomial binom(100, 0.4);
 	//double g = boost::math::pdf(binom, 20);
-
-
-
+	/*Histogram<> hist;
+	hist.calMissRate(0, 0, 8, true);*/
+	
 	Reader reader("E:\\ShareShen\\gem5-stable\\m5out-se-x86\\cactusADM\\cactusADM-trace-part.txt", \
 		"E:\\ShareShen\\gem5-stable\\m5out-se-x86\\cactusADM\\cactusADM-avl-2assoc.txt");
 

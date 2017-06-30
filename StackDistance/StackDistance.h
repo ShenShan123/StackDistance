@@ -40,6 +40,8 @@ class Histogram
 	B samples;
 	/* total number of miss references */
 	B misses;
+	/* total number of hit references */
+	B hits;
 	/* cache miss rate */
 	Accur missRate;
 
@@ -52,19 +54,20 @@ public:
 	/* complete the histogram with std::vector, to fast calculation. */
 	bool mapToVector();
 	/* use boost binomial distribution to do a fully-to-set-associative cache transformation */
-	void fullyToSetAssoc(const int & cap, const int & blk, const int & assoc);
+	Accur fullyToSetAssoc(const int & cap, const int & blk, const int & assoc);
 	/* use boost poisson distribution to do a fully-to-set-associative cache transformation */
 	void fullyToSetAssoc_Poisson(const int & cap, const int & blk, const int & assoc);
 	/* transform reuse distance distribution to stack distance distribution */
 	void reuseDistToStackDist();
 
 	void print(std::ofstream & file);
-	/* calculate the miss rate for LRU set associative cache */
-	void calMissRate(const int & assoc);
-
-	void calMissRate(const int & cap, const int & blk);
-	/* calculate the miss rate for PLRU set associative cache */
-	void calMissRate(const int & assoc, const bool plru);
+	/* calculate the miss rate for LRU set associative cache via cdf of binomial distribution */
+	Accur calLruMissRate(const int & cap, const int & blk, const int & assoc);
+	
+	Accur calPlruMissRate(const int & cap, const int & blk, const int & assoc);
+	/* calculate the miss rate for PLRU set associative cache, 
+	   first do set-association transforming, then calculate hit function */
+	Accur calMissRate(const int & cap, const int & blk, const int & assoc, const bool plru);
 };
 
 template <class Accur>
