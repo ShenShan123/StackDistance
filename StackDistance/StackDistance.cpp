@@ -5,208 +5,17 @@
 #include "StackDistance.h"
 #include "NtlTest.h"
 
-//template <class T, class Lanczos, class Policy>
-//T ibeta_power_terms(T a,
-//	T b,
-//	T x,
-//	T y,)
-//{
-//	T result;
-//
-//	T c = a + b;
-//
-//	// combine power terms with Lanczos approximation:
-//	T agh = static_cast<T>(a + G - 0.5);
-//	T bgh = static_cast<T>(b + G - 0.5);
-//	T cgh = static_cast<T>(c + G - 0.5);
-//	result = lanzocsConstWithE(c) / (lanzocsConstWithE(a) * lanzocsConstWithE(b));
-//	//result *= prefix;
-//	// combine with the leftover terms from the Lanczos approximation:
-//	result *= sqrt(bgh / boost::math::constants::e<T>());
-//	result *= sqrt(agh / cgh);
-//
-//	// l1 and l2 are the base of the exponents minus one:
-//	T l1 = (x * b - y * agh) / agh;
-//	T l2 = (y * a - x * bgh) / bgh;
-//	if (((std::min)(fabs(l1), fabs(l2)) < 0.2))
-//	{
-//		// when the base of the exponent is very near 1 we get really
-//		// gross errors unless extra care is taken:
-//		if ((l1 * l2 > 0) || ((std::min)(a, b) < 1))
-//		{
-//			//
-//			// This first branch handles the simple cases where either: 
-//			//
-//			// * The two power terms both go in the same direction 
-//			// (towards zero or towards infinity).  In this case if either 
-//			// term overflows or underflows, then the product of the two must 
-//			// do so also.  
-//			// *Alternatively if one exponent is less than one, then we 
-//			// can't productively use it to eliminate overflow or underflow 
-//			// from the other term.  Problems with spurious overflow/underflow 
-//			// can't be ruled out in this case, but it is *very* unlikely 
-//			// since one of the power terms will evaluate to a number close to 1.
-//			//
-//			if (fabs(l1) < 0.1)
-//			{
-//				result *= exp(a * boost::math::log1p(l1, pol));
-//				BOOST_MATH_INSTRUMENT_VARIABLE(result);
-//			}
-//			else
-//			{
-//				result *= pow((x * cgh) / agh, a);
-//				BOOST_MATH_INSTRUMENT_VARIABLE(result);
-//			}
-//			if (fabs(l2) < 0.1)
-//			{
-//				result *= exp(b * boost::math::log1p(l2, pol));
-//				BOOST_MATH_INSTRUMENT_VARIABLE(result);
-//			}
-//			else
-//			{
-//				result *= pow((y * cgh) / bgh, b);
-//				BOOST_MATH_INSTRUMENT_VARIABLE(result);
-//			}
-//		}
-//		else if ((std::max)(fabs(l1), fabs(l2)) < 0.5)
-//		{
-//			//
-//			// Both exponents are near one and both the exponents are 
-//			// greater than one and further these two 
-//			// power terms tend in opposite directions (one towards zero, 
-//			// the other towards infinity), so we have to combine the terms 
-//			// to avoid any risk of overflow or underflow.
-//			//
-//			// We do this by moving one power term inside the other, we have:
-//			//
-//			//    (1 + l1)^a * (1 + l2)^b
-//			//  = ((1 + l1)*(1 + l2)^(b/a))^a
-//			//  = (1 + l1 + l3 + l1*l3)^a   ;  l3 = (1 + l2)^(b/a) - 1
-//			//                                    = exp((b/a) * log(1 + l2)) - 1
-//			//
-//			// The tricky bit is deciding which term to move inside :-)
-//			// By preference we move the larger term inside, so that the
-//			// size of the largest exponent is reduced.  However, that can
-//			// only be done as long as l3 (see above) is also small.
-//			//
-//			bool small_a = a < b;
-//			T ratio = b / a;
-//			if ((small_a && (ratio * l2 < 0.1)) || (!small_a && (l1 / ratio > 0.1)))
-//			{
-//				T l3 = boost::math::expm1(ratio * boost::math::log1p(l2, pol), pol);
-//				l3 = l1 + l3 + l3 * l1;
-//				l3 = a * boost::math::log1p(l3, pol);
-//				result *= exp(l3);
-//				BOOST_MATH_INSTRUMENT_VARIABLE(result);
-//			}
-//			else
-//			{
-//				T l3 = boost::math::expm1(boost::math::log1p(l1, pol) / ratio, pol);
-//				l3 = l2 + l3 + l3 * l2;
-//				l3 = b * boost::math::log1p(l3, pol);
-//				result *= exp(l3);
-//				BOOST_MATH_INSTRUMENT_VARIABLE(result);
-//			}
-//		}
-//		else if (fabs(l1) < fabs(l2))
-//		{
-//			// First base near 1 only:
-//			T l = a * boost::math::log1p(l1, pol)
-//				+ b * log((y * cgh) / bgh);
-//			if ((l <= tools::log_min_value<T>()) || (l >= tools::log_max_value<T>()))
-//			{
-//				l += log(result);
-//				if (l >= tools::log_max_value<T>())
-//					return policies::raise_overflow_error<T>(function, 0, pol);
-//				result = exp(l);
-//			}
-//			else
-//				result *= exp(l);
-//			BOOST_MATH_INSTRUMENT_VARIABLE(result);
-//		}
-//		else
-//		{
-//			// Second base near 1 only:
-//			T l = b * boost::math::log1p(l2, pol)
-//				+ a * log((x * cgh) / agh);
-//			if ((l <= tools::log_min_value<T>()) || (l >= tools::log_max_value<T>()))
-//			{
-//				l += log(result);
-//				if (l >= tools::log_max_value<T>())
-//					return policies::raise_overflow_error<T>(function, 0, pol);
-//				result = exp(l);
-//			}
-//			else
-//				result *= exp(l);
-//			BOOST_MATH_INSTRUMENT_VARIABLE(result);
-//		}
-//	}
-//	else
-//	{
-//		// general case:
-//		T b1 = (x * cgh) / agh;
-//		T b2 = (y * cgh) / bgh;
-//		l1 = a * log(b1);
-//		l2 = b * log(b2);
-//		BOOST_MATH_INSTRUMENT_VARIABLE(b1);
-//		BOOST_MATH_INSTRUMENT_VARIABLE(b2);
-//		BOOST_MATH_INSTRUMENT_VARIABLE(l1);
-//		BOOST_MATH_INSTRUMENT_VARIABLE(l2);
-//		if ((l1 >= tools::log_max_value<T>())
-//			|| (l1 <= tools::log_min_value<T>())
-//			|| (l2 >= tools::log_max_value<T>())
-//			|| (l2 <= tools::log_min_value<T>())
-//			)
-//		{
-//			// Oops, under/overflow, sidestep if we can:
-//			if (a < b)
-//			{
-//				T p1 = pow(b2, b / a);
-//				T l3 = a * (log(b1) + log(p1));
-//				if ((l3 < tools::log_max_value<T>())
-//					&& (l3 > tools::log_min_value<T>()))
-//				{
-//					result *= pow(p1 * b1, a);
-//				}
-//				else
-//				{
-//					l2 += l1 + log(result);
-//					if (l2 >= tools::log_max_value<T>())
-//						return policies::raise_overflow_error<T>(function, 0, pol);
-//					result = exp(l2);
-//				}
-//			}
-//			else
-//			{
-//				T p1 = pow(b1, a / b);
-//				T l3 = (log(p1) + log(b2)) * b;
-//				if ((l3 < tools::log_max_value<T>())
-//					&& (l3 > tools::log_min_value<T>()))
-//				{
-//					result *= pow(p1 * b2, b);
-//				}
-//				else
-//				{
-//					l2 += l1 + log(result);
-//					if (l2 >= tools::log_max_value<T>())
-//						return policies::raise_overflow_error<T>(function, 0, pol);
-//					result = exp(l2);
-//				}
-//			}
-//			BOOST_MATH_INSTRUMENT_VARIABLE(result);
-//		}
-//		else
-//		{
-//			// finally the normal case:
-//			result *= pow(b1, a) * pow(b2, b);
-//			BOOST_MATH_INSTRUMENT_VARIABLE(result);
-//		}
-//	}
-//
-//	BOOST_MATH_INSTRUMENT_VARIABLE(result);
-//
-//	return result;
-//}
+template <class B, class Accur>
+void Histogram<B, Accur>::clear()
+{
+	binsMap.clear();
+	binsVec.clear();
+	binsTra.clear();
+	samples = 0;
+	misses = 0;
+	hits = 0;
+	missRate = 0;
+}
 
 template <class B, class Accur>
 void Histogram<B, Accur>::sample(B x)
@@ -219,26 +28,79 @@ void Histogram<B, Accur>::sample(B x)
 	++samples;
 }
 
+//template <class B, class Accur>
+//bool Histogram<B, Accur>::mapToVector()
+//{
+//	auto last = binsMap.end();
+//	/* point to the last element */
+//	long maxSize = (--last)->first;
+//	/* reserve some memory */
+//	binsVec.reserve(maxSize);
+//
+//	auto it = binsMap.begin();
+//
+//	for (long i = 0; i <= maxSize; ++i)
+//		if (i == it->first) {
+//			binsVec.push_back(it->second);
+//			++it;
+//		}
+//		else
+//			binsVec.push_back(0);
+//
+//		return binsVec.size() == last->first + 1;
+//}
+
+
 template <class B, class Accur>
-bool Histogram<B, Accur>::mapToVector()
+bool Histogram<B, Accur>::mapToVector(B * buffer, int bufSize)
 {
-	std::map<long, B>::iterator last = binsMap.end();
-	/* point to the last element */
-	long maxSize = (--last)->first;
+	assert(bufSize);
 	/* reserve some memory */
-	binsVec.reserve(maxSize);
+	binsVec.reserve(MISS_BAR);
 
-	std::map<long, B>::iterator it = binsMap.begin();
+	/* first bin is SD=0 */
+	binsVec.push_back(buffer[0]);
+	/* calculate the sum of all samples */
+	samples = buffer[0];
 
-	for (long i = 0; i <= maxSize; ++i)
-		if (i == it->first) {
-			binsVec.push_back(it->second);
-			++it;
+	/* i is the index of buffer and starts from 1 */
+	for (long i = 1; i < bufSize; ++i)
+		/* fill up with 0 for the blank bins */
+		if (!buffer[i])
+			binsVec.resize(binsVec.size() + std::exp2(i - 1));
+		else {
+			for (int j = std::exp2(i - 1); j < std::exp2(i) && j <= MISS_BAR; ++j)
+				binsVec.push_back((Accur)buffer[i] / std::exp2(i - 1));
+			samples += buffer[i];
 		}
-		else
-			binsVec.push_back(0);
 
-		return binsVec.size() == last->first + 1;
+	return binsVec.size() == MISS_BAR;
+}
+
+template <class B, class Accur>
+bool Histogram<B, Accur>::mapToVector(std::vector<B> & buffer)
+{
+	assert(buffer.size());
+	/* reserve some memory */
+	binsVec.reserve(MISS_BAR + 1);
+
+	/* first bin is SD=0 */
+	binsVec.push_back(buffer[0]);
+	/* calculate the sum of all samples */
+	samples = buffer[0];
+
+	/* i is the index of buffer and starts from 1 */
+	for (long i = 1; i < buffer.size(); ++i)
+		/* fill up with 0 for the blank bins */
+		if (!buffer[i])
+			binsVec.resize(binsVec.size() + std::exp2(i - 1));
+		else {
+			for (int j = std::exp2(i - 1); j < std::exp2(i) && j <= MISS_BAR; ++j)
+				binsVec.push_back((Accur)buffer[i] / std::exp2(i - 1));
+			samples += buffer[i];
+		}
+
+		return binsVec.size() == MISS_BAR + 1;
 }
 
 template <class B, class Accur>
@@ -268,6 +130,19 @@ void Histogram<B, Accur>::reuseDistToStackDist()
 	binsVec = transTemp;
 }
 
+/* calculate log2(s) + 1 */
+template<class T>
+inline T log2p1(T s)
+{
+	T result = 0;
+	while (s) {
+		s >>= 1;
+		++result;
+	}
+
+	return result;
+}
+
 template <class B, class Accur>
 Accur Histogram<B, Accur>::fullyToSetAssoc(const int & cap, const int & blk, const int & assoc)
 {
@@ -276,14 +151,9 @@ Accur Histogram<B, Accur>::fullyToSetAssoc(const int & cap, const int & blk, con
 	Accur p = (Accur)1 / setNum;
 	binsTra.clear();
 
-	int tempAssoc = assoc - 1;
 	/* secureDist = log2(assoc),
 	the least not evcited SD, called secure distance */
-	int secureDist = 0;
-	while (tempAssoc) {
-		tempAssoc >>= 1;
-		++secureDist;
-	}
+	int secureDist = log2p1(assoc) - 1;
 
 	/* if a mem ref's SD <= secureDist, it is a cache hit, 
 	   we don't need to transform these bar */
@@ -300,14 +170,17 @@ Accur Histogram<B, Accur>::fullyToSetAssoc(const int & cap, const int & blk, con
 			it's a binomial distribution */
 			boost::math::binomial binom(i, p);
 
-			/* start from j=0, ref with SD >= assoc + secureDist is definitely miss in PLRU cache, 
+			/* start from j=0, ref with SD >= assoc + secureDist is definitely miss in PLRU cache,
 			   so we don't need to calculate these bars */
 			for (int j = 0; j <= i && j < assoc + secureDist; ++j)
 				binsTra[j] += binsVec[i] * boost::math::pdf(binom, (Accur)j);
+
+			//for (int j = 0; j <= k; ++j)
+			//	binsTra[log2p1(j)] += (Accur)binsVec[i] / std::exp2(i - 1) * boost::math::pdf(binom, (Accur)j);// shen
 		}
 
 		hits = 0;
-		for (int i = 0; i < assoc; ++i)
+		for (int i = 0; i < assoc; ++i) // shen
 			hits += (B)std::round(binsTra[i]);
 		return 1 - (Accur)hits / samples;
 	}
@@ -358,9 +231,10 @@ Accur Histogram<B, Accur>::calLruMissRate(const int & cap, const int & blk, cons
 		boost::math::binomial binom(i, p);
 		hits += (B)std::round(binsVec[i] * boost::math::cdf(binom, (Accur)assoc - 1));
 	}
+
 	/* add up the SD < assoc fraction */
 	for (int i = 0; i < assoc; ++i)
-		hits += binsVec[i];
+		hits += (B)std::round(binsVec[i]);
 
 	missRate = 1 - (Accur)hits / samples;
 	return missRate;
@@ -372,14 +246,9 @@ Accur Histogram<B, Accur>::calPlruMissRate(const int & cap, const int & blk, con
 {
 	fullyToSetAssoc(cap, blk, assoc);
 
-	int tempAssoc = assoc - 1;
 	/* secureDist = log2(assoc),
 	the least not evcited distance, called secure distance */
-	int secureDist = 0;
-	while (tempAssoc) {
-		tempAssoc >>= 1;
-		++secureDist;
-	}
+	int secureDist = log2p1(assoc) - 1;
 
 	/* we assume that refs with SD <= secureDist are hits, SD > secureDist is a miss,
 	   so the miss rate is SD(secureDist + 1) / sum(SD, secureDist + 1, 0). */
@@ -398,7 +267,7 @@ Accur Histogram<B, Accur>::calPlruMissRate(const int & cap, const int & blk, con
 	//	tempMisses += binsTra[i];
 	//Accur lastAccesMiss = tempMisses / (tempMisses + tempHits);
 
-	tempAssoc = assoc - 1;
+	int tempAssoc = assoc - 1;
 	/* p1, a point with SD=secureDist+1 */
 	Accur p1 = 1.0;
 	/* 2^0 * 2^1 * ... * 2^(secureDist-1) / A(assoc-1, secureDist) */
@@ -439,7 +308,7 @@ Accur Histogram<B, Accur>::calPlruMissRate(const int & cap, const int & blk, con
 	for (int i = secureDist + 1; i <= assoc; ++i) {
 		Accur y = k1 * (i - secureDist - 1) + p1;
 		hits += y * binsTra[i];
-		std::cout << y << std::endl;
+		//std::cout << y << std::endl;
 	}
 	/* p3, with SD=assoc + assoc/2 - 2, hit probability */
 	Accur p3 = 1 / (Accur)(assoc - 1);
@@ -448,7 +317,7 @@ Accur Histogram<B, Accur>::calPlruMissRate(const int & cap, const int & blk, con
 	for (int i = assoc + 1; i <= assoc * 3 / 2 - 2; ++i) {
 		Accur y = k2 * (i - assoc) + p2;
 		hits += y * binsTra[i];
-		std::cout << y << std::endl;
+		//std::cout << y << std::endl;
 	}
 	
 	for (int i = 0; i <= secureDist; ++i)
@@ -555,16 +424,63 @@ Accur Histogram<B, Accur>::calMissRate(const int & cap, const int & blk, const i
 template <class B, class Accur>
 void Histogram<B, Accur>::print(std::ofstream & file)
 {
-	file << "total_samples" << "\t" << samples << std::endl;
-	file << "total_misses" << "\t" << misses << std::endl;
-	file << "miss_rate" << "\t" << missRate << std::endl;
+	auto it = binsMap.begin();
+	auto last = --binsMap.end();
+	for (int i = 0; i < last->first; ++i)
+		/* print zero value bins */
+		if (it->first != i)
+			file << "0 ";
+		else {
+			file << it->second << " ";
+			++it;
+		}
+		file << "\n";
 
-	for (int i = 0; i < binsTra.size(); ++i) {
-		/* do not print zero value bins */
-		if (!binsTra[i]) continue;
-		file << "dist" << i << "\t" << binsTra[i] << std::endl;
-	}
 }
+
+template <class Accur>
+AvlNode<Accur>::AvlNode(Accur & a) : holes(1), rHoles(0), height(0), left(nullptr), right(nullptr)
+{
+	interval = std::make_pair(a, a);
+}
+
+template <class Accur>
+AvlNode<Accur>::AvlNode(AvlNode<Accur> & n) : holes(n.holes), rHoles(n.rHoles), height(n.height), left(n.left), right(n.right)
+{
+	interval = n.interval;
+}
+
+template <class Accur>
+AvlNode<Accur>::~AvlNode()
+{
+	delete left;
+	delete right;
+	left = nullptr;
+	right = nullptr;
+}
+
+template <class Accur>
+void AvlNode<Accur>::updateHeight()
+{
+	height = 1 + std::max(getHeight(left), getHeight(right));
+}
+
+template <class Accur>
+void AvlNode<Accur>::updateHoles()
+{
+	rHoles = right ? right->holes : 0;
+
+	holes =
+		(left ? left->holes : 0) + rHoles +
+		int(interval.second - interval.first) + 1;
+}
+
+AvlTreeStack::AvlTreeStack(long & v) : index(0), curHoles(0)
+{
+	root = new AvlNode<long>(v);
+}
+
+AvlTreeStack::AvlTreeStack() : root(nullptr), index(0), curHoles(0) {};
 
 void AvlTreeStack::destroy(AvlNode<long> * & tree)
 {
@@ -575,6 +491,14 @@ void AvlTreeStack::destroy(AvlNode<long> * & tree)
 	destroy(tree->right);
 	delete tree;
 	tree = nullptr;
+}
+
+void AvlTreeStack::clear()
+{
+	addrMap.clear();
+	destroy(root);
+	index = -1;
+	curHoles = -1;
 }
 
 void AvlTreeStack::insert(AvlNode<long> * & tree, long & v) {
@@ -764,7 +688,7 @@ void AvlTreeStack::balance(AvlNode<long> * & tree)
 	tree->updateHoles();
 }
 
-void AvlTreeStack::calReuseDist(uint64_t addr, Histogram<> & hist)
+void AvlTreeStack::calStackDist(uint64_t addr, Histogram<> & hist)
 {
 	long & value = addrMap[addr];
 
@@ -773,7 +697,7 @@ void AvlTreeStack::calReuseDist(uint64_t addr, Histogram<> & hist)
 	/* value is 0 under cold miss */
 	if (!value) {
 		value = index;
-		hist.sample(MISS_BAR);
+		hist.sample(log2p1(MISS_BAR));
 		return;
 	}
 
@@ -784,7 +708,7 @@ void AvlTreeStack::calReuseDist(uint64_t addr, Histogram<> & hist)
 		int stackDist = index - value - curHoles - 1;
 		/* if the stack distance is large than MISS_BAR, the reference is definitely missed. */
 		stackDist = stackDist >= MISS_BAR ? MISS_BAR : stackDist;
-		hist.sample(stackDist);
+		hist.sample(log2p1(stackDist));
 	}
 
 	value = index;
@@ -813,12 +737,18 @@ void ReuseDist::calReuseDist(uint64_t addr, Histogram<> & hist)
 	value = index;
 }
 
+SampleStack::SampleStack(int sSize, int hSize, double sRate) : sampleCounter(0), statusCounter(0), hibernInter(hSize),
+sampleInter(sSize), state(State::hibernating), sampleRate(sRate) {};
+
+SampleStack::SampleStack(double sRate) : sampleCounter(0), statusCounter(0), hibernInter(0),
+sampleInter(0), state(State::sampling), sampleRate(sRate) {};
+
 int SampleStack::genRandom()
 {
 	// construct a trivial random generator engine from a time-based seed:
 	std::chrono::system_clock::rep seed = std::chrono::system_clock::now().time_since_epoch().count();
 	static std::mt19937 engine(seed);
-	static std::geometric_distribution<int> geom((double)expectSamples / sampleInter);
+	static std::geometric_distribution<int> geom(sampleRate);
 	int rand = 0;
 	/* the random can not be 0 */
 	while (!rand)
@@ -829,36 +759,31 @@ int SampleStack::genRandom()
 
 void SampleStack::calStackDist(uint64_t addr, Histogram<> & hist)
 {
-	++sampleCounter;
-	++statusCounter;
-
-	/* start sampling interval */
-	if (!isSampling && statusCounter == hibernInter) {
-		statusCounter = 0;
-		sampleCounter = 0;
-		isSampling = true;
-		randNum = genRandom();
+	/* start a new sampling interval */
+	if (state == State::hibernating && !statusCounter) {
+		statusCounter = sampleInter;
+		sampleCounter = genRandom();
+		state = State::sampling;
 	}
 	/* start hibernation interval */
-	else if (isSampling && statusCounter == sampleInter) {
-		statusCounter = 0;
-		isSampling = false;
+	else if (state == State::sampling && !statusCounter) {
+		statusCounter = hibernInter;
+		state = State::hibernating;
 	}
 
 	/* if we find a same address x in addrTable,
 	record its stack distance and the sampling of x is finished */
-	std::unordered_map<uint64_t, AddrSet>::iterator pos;
-	pos = addrTable.find(addr);
+	auto pos = addrTable.find(addr);
 	if (pos != addrTable.end()) {
-		hist.sample(pos->second.size() - 1);
+		hist.sample(log2p1(pos->second.size() - 1));
 		addrTable.erase(addr);
 	}
 
-	std::unordered_map<uint64_t, AddrSet>::iterator it = addrTable.begin();
+	auto it = addrTable.begin();
 
 	/* make sure the max size of addrTable */
-	if (addrTable.size() > expectSamples) {
-		hist.sample(MISS_BAR);
+	if (addrTable.size() > sampleRate * sampleInter * 2) {
+		hist.sample(log2p1(MISS_BAR));
 		addrTable.erase(it->first);
 	}
 
@@ -868,9 +793,9 @@ void SampleStack::calStackDist(uint64_t addr, Histogram<> & hist)
 		/* if the set of sampled address x is too large,
 		erase it from  the table and record as MISS_BAR */
 		if (it->second.size() > MISS_BAR) {
-			std::unordered_map<uint64_t, AddrSet>::iterator eraseIt = it;
+			auto eraseIt = it;
 			++it;
-			hist.sample(MISS_BAR);
+			hist.sample(log2p1(MISS_BAR));
 			addrTable.erase(eraseIt->first);
 		}
 		else
@@ -878,143 +803,66 @@ void SampleStack::calStackDist(uint64_t addr, Histogram<> & hist)
 	}
 
 	/* if it is time to do sampling */
-	if (isSampling && sampleCounter == randNum) {
+	if (state == State::sampling && !sampleCounter) {
 		/* it is a new sampled address */
 		assert(!addrTable[addr].size());
 		addrTable[addr].insert(0);
 		/* reset the sampleCounter and randNum to prepare next sample */
-		sampleCounter = 0;
-		randNum = genRandom();
-		//randNum = 1;
+		sampleCounter = genRandom();
 	}
+
+	--statusCounter;
+	if (state == State::sampling)
+		--sampleCounter;
 }
 
-Reader::Reader(std::string _path, std::string _pathout) {
-	std::ifstream file;
-	std::ofstream fileOut;
+Reader::Reader(std::ifstream & fin) {
+	std::ofstream fout("missrate-gcc-166-100M.txt");
+	Histogram<int64_t> histogram;
+	int binSize = log2p1(MISS_BAR) + 1;
+	int64_t * temp = new int64_t[binSize];
+	std::vector<int64_t> buffer(binSize);
 
-	file.open(_path, std::ios::in);
-	if (file.fail()) {
-		std::cout << "File openning failed! " << std::endl;
-		return;
-	}
-
-	fileOut.open(_pathout, std::ios::out);
-	if (fileOut.fail()) {
-		std::cout << "File openning failed! " << std::endl;
-		return;
-	}
-
-	std::string temp;
-	std::string line;
-	int interval = 0;
-	bool start = false;
-
-	std::cout << "Reading files and calculate stack distances..." << std::endl;
-	/* the index of interval */
-	int i = 2;
-
-	while (std::getline(file, line)) {
-		std::stringstream lineStream(line);
-		uint64_t paddr;
-		uint64_t vaddr;
-		lineStream >> temp;
-		
-		if (temp == "interval") {
-			++interval;
-			if (interval == i) {
-				start = true;
-				continue;
-			}
-			else if (interval > i)
-				break;
-			else
-				continue;
+	while (!fin.eof()) {
+		fin.read((char *)temp, binSize * sizeof(int64_t));
+		if (temp[binSize - 1] < 0) break;
+		//for (int i = 0; i < binSize; ++i)
+		//	std::cout << temp[i] << " ";
+		//std::cout << "\n";
+		for (int i = 0; i < binSize; ++i) {
+			buffer[i] += temp[i];
 		}
 
-		if (!start)
-			continue;
 
-		lineStream >> std::hex >> paddr;
-		lineStream >> temp;
-		lineStream >> std::hex >> vaddr;
+		///* save temp bins into histogram */
+		//bool succ = histogram.mapToVector(temp, binSize);
+		//
+		//int cap = 32 * 1024;
+		//int blk = 64;
+		//int assoc = 16;
 
-		uint64_t addr = vaddr;
-		/* check a valid address */
-		if (!addr)
-			continue;
-		
-		/* call the methods to calculate stack distances */
-		//listStack.calStackDist(addr);
-		uint64_t mask = 63;
-		addr = addr & (~mask);
+		//double lruMissRate = histogram.calMissRate(cap, blk, assoc, false);
+		////double lruTraMissRate = histogram.fullyToSetAssoc(cap, blk, assoc);
+		//double plruMissRate = histogram.calMissRate(cap, blk, assoc, true);
 
-#ifdef STACK
-		avlTreeStack.calReuseDist(addr, histogram);
-#endif
-
-#ifdef REUSE
-		reuseDist.calReuseDist(addr, histogram);
-#endif
-
-#ifdef SAMPLE
-		sampleStack.calStackDist(addr, histogram);
-#endif
+		//fout << std::setprecision(6) << lruMissRate << " " << plruMissRate << std::endl;
 	}
-	//listStack.print("E:\\ShareShen\\gem5-origin\\m5out-se-x86\\perlbench.txt");
-	std::cout << "transiting stack distances..." << std::endl;
+
+	delete[] temp;
+
+	/* save temp bins into histogram */
+	bool succ = histogram.mapToVector(buffer);
 
 	int cap = 32 * 1024;
 	int blk = 64;
 	int assoc = 16;
-	/* transforming and calculating miss rate */
-	bool succ = histogram.mapToVector();
-
-#ifdef REUSE
-	histogram.reuseDistToStackDist();
-	histogram.calMissRate(512);
-#endif // REUSE
 
 	double lruMissRate = histogram.calMissRate(cap, blk, assoc, false);
 	//double lruTraMissRate = histogram.fullyToSetAssoc(cap, blk, assoc);
-	double plruMissRate2 = histogram.calMissRate(cap, blk, assoc, true);
 	double plruMissRate = histogram.calMissRate(cap, blk, assoc, true);
 
-	file.close();
-	fileOut.close();
-}
-
-void missProb(int assoc)
-{
-	int tempAssoc = assoc - 1;
-	/* secureDist = log2(assoc),
-	the least not evcited distance, called secure distance */
-	int secureDist = 0;
-	while (tempAssoc) {
-		tempAssoc >>= 1;
-		++secureDist;
-	}
-
-	double p = 1.0;
-	tempAssoc = assoc - 1;
-
-	for (int i = 0; i < secureDist; ++i) {
-		p *= (1 << i);
-		p /= tempAssoc--;
-	}
-
-	double missRate = 0.2;
-	p *= missRate;
-	std::cout << 1 - p << std::endl;
-
-	for (int i = 0; i < assoc * 3 / 2; ++i) {
-		p = (1 - p);
-		double t = std::pow(0.5, secureDist);
-		p *= t;
-		missRate -= 0.02;
-		p *= missRate;
-		std::cout << 1 - p << std::endl;
-	}
+	fout << std::setprecision(6) << lruMissRate << " " << plruMissRate << std::endl;
+	fout.close();
 }
 
 int main()
@@ -1025,11 +873,28 @@ int main()
 	//double d = boost::math::lanczos::lanczos13m53::lanczos_sum_expG_scaled(z);
 	//boost::math::binomial binom(100, 0.4);
 	//double g = boost::math::pdf(binom, 20);
-	/*Histogram<> hist;
-	hist.calMissRate(0, 0, 8, true);*/
-	
-	Reader reader("E:\\ShareShen\\gem5-stable\\m5out-se-x86\\cactusADM\\cactusADM-trace-part.txt", \
-		"E:\\ShareShen\\gem5-stable\\m5out-se-x86\\cactusADM\\cactusADM-avl-2assoc.txt");
+	//Histogram<> hist;
+	//hist.sample(log2p1(0));
+	//hist.sample(log2p1(8));
+	//hist.sample(log2p1(13));
+	//bool c = hist.mapToVector();
+	//missProb(8);
+	//std::ofstream out("E:\\ShareShen\\dump.txt");
+	//Histogram<> hist;
+	//hist.sample(9);
+	//hist.sample(10);
+	//hist.print(out);
+	//out.close();
+	//int a[10] = { 1,2,3 };
+	//void * q = a;
+	//uint64_t c = reinterpret_cast<uint64_t> (q);
+	std::ifstream fin;
+	fin.open("E:\\ShareShen\\pin-3.2-81205-gcc-linux\\source\\tools\\memTraceSimple\\gcc-trace\\gcc-166-0.0002-100M.txt", std::ios::binary | std::ios::in);
+	if (fin.fail()) {
+		std::cout << "SDD file openning failed! " << std::endl;
+		return 0;
+	}
+	Reader reader(fin);
 
  	return 0;
 }

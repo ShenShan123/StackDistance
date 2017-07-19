@@ -19,40 +19,43 @@
 #include <time.h>
 
 //#define REUSE
-#define STACK
-//#define SAMPLE
+//#define STACK
+#define SAMPLE
 
 #define MISS_BAR 1024 * 2
 
 /* for recording distribution into a Histogram, 
    Accur is the accuracy of transforming calculation */
-template <class B = int, class Accur = double>
+template <class B = int64_t, class Accur = double>
 class Histogram
 {
 	/* Histogram implemented by std::map */
 	std::map<long, B> binsMap;
 	/* Histogram implemented by std::vector */
-	std::vector<B> binsVec;
+	//std::vector<B> binsVec;
+	std::vector<Accur> binsVec;
 	/* Histogram implemented by std::vector, 
 	   after fully-to-set-associative cache transformation */
 	std::vector<Accur> binsTra;
 	/* number of sampling */
 	B samples;
-	/* total number of miss references */
-	B misses;
 	/* total number of hit references */
 	B hits;
 	/* cache miss rate */
 	Accur missRate;
 
 public:
-	Histogram() : misses(0), missRate(0.0) {};
+	Histogram() : samples(0), hits(0), missRate(0.0) {};
 
 	~Histogram() {};
 
+	void clear();
+
 	void sample(B x);
 	/* complete the histogram with std::vector, to fast calculation. */
-	bool mapToVector();
+	bool mapToVector(B * buffer, int bufSize);
+
+	bool mapToVector(std::vector<B> & buffer);
 	/* use boost binomial distribution to do a fully-to-set-associative cache transformation */
 	Accur fullyToSetAssoc(const int & cap, const int & blk, const int & assoc);
 	/* use boost poisson distribution to do a fully-to-set-associative cache transformation */
@@ -86,42 +89,20 @@ class AvlNode
 	AvlNode<Accur> * right;
 
 public:
-	AvlNode(Accur & a) : holes(1), rHoles(0), height(0), left(nullptr), right(nullptr)
-	{
-		interval = std::make_pair(a, a);
-	}
+	AvlNode(Accur & a);
 
-	AvlNode(AvlNode<Accur> & n) : holes(n.holes), rHoles(n.rHoles), height(n.height), left(n.left), right(n.right)
-	{
-		interval = n.interval;
-	}
+	AvlNode(AvlNode<Accur> & n);
 
-	~AvlNode()
-	{
-		delete left;
-		delete right;
-		left = nullptr;
-		right = nullptr;
-	}
+	~AvlNode();
 
 	static int getHeight(AvlNode<Accur> * & node)
 	{
 		return node ? node->height : -1;
 	}
 
-	void updateHeight()
-	{
-		height = 1 + std::max(getHeight(left), getHeight(right));
-	}
+	void updateHeight();
 
-	void updateHoles()
-	{
-		rHoles = right ? right->holes : 0;
-
-		holes =
-			(left ? left->holes : 0) + rHoles +
-			int(interval.second - interval.first) + 1;
-	}
+	void updateHoles();
 };
 
 /* for calculating stack distance distribution via AVL Tree, with no sampling*/
@@ -135,16 +116,15 @@ class AvlTreeStack
 	int curHoles;
 
 public:
-	AvlTreeStack(long & v) : index(0), curHoles(0)
-	{
-		root = new AvlNode<long>(v);
-	}
+	AvlTreeStack(long & v);
 
-	AvlTreeStack() : root(nullptr), index(0), curHoles(0) {};
+	AvlTreeStack();
 
 	~AvlTreeStack() { destroy(root); }
 
 	void destroy(AvlNode<long> * & tree);
+
+	void clear();
 
 	void insert(AvlNode<long> * & tree, long & v);
 
@@ -177,22 +157,7 @@ public:
 
 	void balance(AvlNode<long> * & tree);
 
-	void calReuseDist(uint64_t addr, Histogram<> & hist);
-};
-
-/* useless */
-class ListStack
-{
-	std::list<uint64_t> addrList;
-
-	Histogram<int, double> hist;
-
-public:
-	ListStack() {};
-
-	~ListStack() {};
-
-	void calStackDist(uint64_t addr);
+	void calStackDist(uint64_t addr, Histogram<> & hist);
 };
 
 /* do reuse distance statistics */
@@ -216,17 +181,22 @@ class SampleStack
 	typedef std::unordered_set<uint64_t> AddrSet;
 	/* each watchpoint has a set to keep the unique mem refs */
 	std::unordered_map<uint64_t, AddrSet> addrTable;
-	int randNum;
-	int sampleCounter;
-	int expectSamples;
+	/* hibernating interval size */
 	int hibernInter;
+	/* sampling interval size */
 	int sampleInter;
-	long statusCounter;
-	bool isSampling;
+	/* the counter starts a sampling or hibernating interval */
+	uint64_t statusCounter;
+	/* the counter chooses the random sample to record SD */
+	uint64_t sampleCounter;
+	enum State {sampling, hibernating};
+	State state;
+	double sampleRate;
 
 public:
-	SampleStack() : sampleCounter(0), expectSamples(2000), hibernInter(3000000), 
-		            sampleInter(1000000), isSampling(false), statusCounter(0) {};
+	SampleStack(double);
+
+	SampleStack(int sSize, int hSize, double sRate);
 
 	/* to generate a random number */
 	int genRandom();
@@ -236,20 +206,6 @@ public:
 
 class Reader
 {
-private:
-#ifdef STACK
-	AvlTreeStack avlTreeStack;
-#endif
-
-#ifdef REUSE
-	ReuseDist reuseDist;
-#endif
-
-#ifdef SAMPLE
-	SampleStack sampleStack;
-#endif
-	Histogram<> histogram;
-
 public:
-	Reader(std::string _path, std::string _pathout);
+	Reader(std::ifstream & fin);
 };
