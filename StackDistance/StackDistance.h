@@ -19,10 +19,12 @@
 #include <time.h>
 
 //#define REUSE
-//#define STACK
-#define SAMPLE
+#define STACK
+//#define SAMPLE
 
-#define MISS_BAR 1024 * 2
+#define MISS_BAR 131072
+
+static int64_t Trunc;
 
 /* for recording distribution into a Histogram, 
    Accur is the accuracy of transforming calculation */
@@ -52,6 +54,8 @@ public:
 	void clear();
 
 	void sample(B x);
+
+	bool mapToVector();
 	/* complete the histogram with std::vector, to fast calculation. */
 	bool mapToVector(B * buffer, int bufSize);
 

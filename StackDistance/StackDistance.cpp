@@ -28,27 +28,27 @@ void Histogram<B, Accur>::sample(B x)
 	++samples;
 }
 
-//template <class B, class Accur>
-//bool Histogram<B, Accur>::mapToVector()
-//{
-//	auto last = binsMap.end();
-//	/* point to the last element */
-//	long maxSize = (--last)->first;
-//	/* reserve some memory */
-//	binsVec.reserve(maxSize);
-//
-//	auto it = binsMap.begin();
-//
-//	for (long i = 0; i <= maxSize; ++i)
-//		if (i == it->first) {
-//			binsVec.push_back(it->second);
-//			++it;
-//		}
-//		else
-//			binsVec.push_back(0);
-//
-//		return binsVec.size() == last->first + 1;
-//}
+template <class B, class Accur>
+bool Histogram<B, Accur>::mapToVector()
+{
+	auto last = binsMap.end();
+	/* point to the last element */
+	long maxSize = (--last)->first;
+	/* reserve some memory */
+	binsVec.reserve(maxSize);
+
+	auto it = binsMap.begin();
+
+	for (long i = 0; i <= maxSize; ++i)
+		if (i == it->first) {
+			binsVec.push_back(it->second);
+			++it;
+		}
+		else
+			binsVec.push_back(0);
+
+		return binsVec.size() == last->first + 1;
+}
 
 
 template <class B, class Accur>
@@ -77,30 +77,62 @@ bool Histogram<B, Accur>::mapToVector(B * buffer, int bufSize)
 	return binsVec.size() == MISS_BAR;
 }
 
+//template <class B, class Accur>
+//bool Histogram<B, Accur>::mapToVector(std::vector<B> & buffer)
+//{
+//	assert(buffer.size());
+//	/* reserve some memory */
+//	binsVec.reserve(MISS_BAR + 1);
+//
+//	/* first bin is SD=0 */
+//	binsVec.push_back(buffer[0]);
+//	/* calculate the sum of all samples */
+//	samples = buffer[0];
+//
+//	/* i is the index of buffer and starts from 1 */
+//	for (long i = 1; i < buffer.size(); ++i)
+//		/* fill up with 0 for the blank bins */
+//		if (!buffer[i])
+//			binsVec.resize(binsVec.size() + std::exp2(i - 1));
+//		else {
+//			for (int j = std::exp2(i - 1); j < std::exp2(i) && j <= MISS_BAR; ++j)
+//				binsVec.push_back((Accur)buffer[i] / std::exp2(i - 1));
+//			samples += buffer[i];
+//		}
+//
+//		return binsVec.size() == MISS_BAR + 1;
+//}
+
 template <class B, class Accur>
 bool Histogram<B, Accur>::mapToVector(std::vector<B> & buffer)
 {
 	assert(buffer.size());
+	binsVec.clear();
 	/* reserve some memory */
 	binsVec.reserve(MISS_BAR + 1);
+	//binsVec.reserve(Trunc + 1);
+	samples = 0;
 
-	/* first bin is SD=0 */
-	binsVec.push_back(buffer[0]);
-	/* calculate the sum of all samples */
-	samples = buffer[0];
-
-	/* i is the index of buffer and starts from 1 */
-	for (long i = 1; i < buffer.size(); ++i)
-		/* fill up with 0 for the blank bins */
-		if (!buffer[i])
-			binsVec.resize(binsVec.size() + std::exp2(i - 1));
-		else {
-			for (int j = std::exp2(i - 1); j < std::exp2(i) && j <= MISS_BAR; ++j)
-				binsVec.push_back((Accur)buffer[i] / std::exp2(i - 1));
+	if (Trunc == 0)
+		for (int i = 0; i < buffer.size(); ++i) {
+			binsVec.push_back((Accur)buffer[i]);
+			samples += buffer[i];
+		}
+	/* if we define a truncation distance */
+	else {
+		for (int i = 0; i <= Trunc; ++i) {
+			binsVec.push_back((Accur)buffer[i]);
 			samples += buffer[i];
 		}
 
-		return binsVec.size() == MISS_BAR + 1;
+		for (int i = Trunc + 1; i < buffer.size(); ++i) {
+			binsVec[Trunc] += buffer[i];
+			samples += buffer[i];
+		}
+	}
+
+	return binsVec.size() == MISS_BAR + 1;
+	//return binsVec.size() == Trunc + 1;
 }
 
 template <class B, class Accur>
@@ -225,13 +257,20 @@ Accur Histogram<B, Accur>::calLruMissRate(const int & cap, const int & blk, cons
 	/* p is a probability of mapping to a specific set */
 	Accur p = (Accur)1 / setNum;
 
-	/* we use cdf to calculate the probability that 
-	   other SDs will be less than assoc after transforming */
-	for (int i = assoc; i < binsVec.size(); ++i) {
-		boost::math::binomial binom(i, p);
-		hits += (B)std::round(binsVec[i] * boost::math::cdf(binom, (Accur)assoc - 1));
+	try {
+		/* we use cdf to calculate the probability that
+		   other SDs will be less than assoc after transforming */
+		for (int i = assoc; i < binsVec.size(); ++i) {
+			boost::math::binomial binom(i, p);
+			Accur q = boost::math::cdf(binom, (Accur)assoc - 1);
+			if (q != 1.0)
+				int c = 1;
+			hits += (B)std::round(binsVec[i] * q);
+		}
 	}
-
+	catch (std::exception e) {
+		std::cout << e.what() << std::endl;
+	}
 	/* add up the SD < assoc fraction */
 	for (int i = 0; i < assoc; ++i)
 		hits += (B)std::round(binsVec[i]);
@@ -566,7 +605,7 @@ AvlNode<long> * & AvlTreeStack::findMin(AvlNode<long> * & tree)
 	if (!tree->left)
 		return tree;
 	else
-		findMin(tree->left);
+		return findMin(tree->left);
 }
 
 AvlNode<long> * & AvlTreeStack::findMax(AvlNode<long> * & tree)
@@ -576,7 +615,7 @@ AvlNode<long> * & AvlTreeStack::findMax(AvlNode<long> * & tree)
 	if (!tree->right)
 		return tree;
 	else
-		findMax(tree->right);
+		return findMax(tree->right);
 }
 
 void AvlTreeStack::remove(AvlNode<long> * & tree, std::pair<long, long> & inter)
@@ -697,7 +736,8 @@ void AvlTreeStack::calStackDist(uint64_t addr, Histogram<> & hist)
 	/* value is 0 under cold miss */
 	if (!value) {
 		value = index;
-		hist.sample(log2p1(MISS_BAR));
+		//hist.sample(log2p1(MISS_BAR));
+		hist.sample(MISS_BAR);
 		return;
 	}
 
@@ -708,7 +748,8 @@ void AvlTreeStack::calStackDist(uint64_t addr, Histogram<> & hist)
 		int stackDist = index - value - curHoles - 1;
 		/* if the stack distance is large than MISS_BAR, the reference is definitely missed. */
 		stackDist = stackDist >= MISS_BAR ? MISS_BAR : stackDist;
-		hist.sample(log2p1(stackDist));
+		//hist.sample(log2p1(stackDist));
+		hist.sample(stackDist);
 	}
 
 	value = index;
@@ -817,15 +858,26 @@ void SampleStack::calStackDist(uint64_t addr, Histogram<> & hist)
 }
 
 Reader::Reader(std::ifstream & fin) {
-	std::ofstream fout("missrate-gcc-166-100M.txt");
+	std::ofstream fout("missrate-gcc-166-trunc-512.txt");
 	Histogram<int64_t> histogram;
-	int binSize = log2p1(MISS_BAR) + 1;
+	//int binSize = log2p1(MISS_BAR) + 1;
+	int binSize = MISS_BAR + 1;
+	Trunc = 98304;
 	int64_t * temp = new int64_t[binSize];
 	std::vector<int64_t> buffer(binSize);
+	std::string line;
+	std::stringstream lineStream;
 
+	//while (std::getline(fin, line)) {
+	//	lineStream << line;
+	//	for (int i = 0; i < binSize; ++i) {
+	//		lineStream >> temp[i];
+	//		buffer[i] += temp[i];
+	//	}
 	while (!fin.eof()) {
 		fin.read((char *)temp, binSize * sizeof(int64_t));
-		if (temp[binSize - 1] < 0) break;
+		if (temp[binSize - 1] < 0)
+			break;
 		//for (int i = 0; i < binSize; ++i)
 		//	std::cout << temp[i] << " ";
 		//std::cout << "\n";
@@ -834,35 +886,92 @@ Reader::Reader(std::ifstream & fin) {
 		}
 
 
-		///* save temp bins into histogram */
-		//bool succ = histogram.mapToVector(temp, binSize);
+		/* save temp bins into histogram */
+		//bool succ = histogram.mapToVector(buffer);
 		//
 		//int cap = 32 * 1024;
 		//int blk = 64;
 		//int assoc = 16;
-
 		//double lruMissRate = histogram.calMissRate(cap, blk, assoc, false);
-		////double lruTraMissRate = histogram.fullyToSetAssoc(cap, blk, assoc);
+		//double lruTraMissRate = histogram.fullyToSetAssoc(cap, blk, assoc);
 		//double plruMissRate = histogram.calMissRate(cap, blk, assoc, true);
-
-		//fout << std::setprecision(6) << lruMissRate << " " << plruMissRate << std::endl;
+		//fout << std::setprecision(6) << lruMissRate << " " << std::endl;
 	}
 
+	//for (int i = 0; i < binSize; ++i)
+	//	std::cout << buffer[i] << " ";
 	delete[] temp;
-
 	/* save temp bins into histogram */
 	bool succ = histogram.mapToVector(buffer);
-
-	int cap = 32 * 1024;
+	//bool succ = histogram.mapToVector(temp, binSize);
+	int cap = 2048 * 1024;
 	int blk = 64;
-	int assoc = 16;
-
+	int assoc = 2;
 	double lruMissRate = histogram.calMissRate(cap, blk, assoc, false);
-	//double lruTraMissRate = histogram.fullyToSetAssoc(cap, blk, assoc);
-	double plruMissRate = histogram.calMissRate(cap, blk, assoc, true);
-
-	fout << std::setprecision(6) << lruMissRate << " " << plruMissRate << std::endl;
+	double lruTraMissRate = histogram.fullyToSetAssoc(cap, blk, assoc);
+	//double plruMissRate = histogram.calMissRate(cap, blk, assoc, true);
+	fout << std::setprecision(6) << lruMissRate << " " << lruTraMissRate << std::endl;
 	fout.close();
+
+	//std::ofstream fileOut;
+	//fileOut.open("old-ADM.txt", std::ios::out);
+	//if (fileOut.fail()) {
+	//	std::cout << "File openning failed! " << std::endl;
+	//	return;
+	//}
+	//std::string temp;
+	//std::string line;
+	//int interval = 0;
+	//bool start = false;
+	//std::cout << "Reading files and calculate stack distances..." << std::endl;
+	///* the index of interval */
+	//int i = 2;
+	//Histogram<> histogram;
+	//AvlTreeStack avlTreeStack;
+	//while (std::getline(fin, line)) {
+	//	std::stringstream lineStream(line);
+	//	uint64_t paddr;
+	//	uint64_t vaddr;
+	//	lineStream >> temp;
+	//	if (temp == "interval") {
+	//		++interval;
+	//		if (interval == i) {
+	//			start = true;
+	//			continue;
+	//		}
+	//		else if (interval > i)
+	//			break;
+	//		else
+	//			continue;
+	//	}
+	//	if (!start)
+	//		continue;
+	//	lineStream >> std::hex >> paddr;
+	//	lineStream >> temp;
+	//	lineStream >> std::hex >> vaddr;
+	//	uint64_t addr = vaddr;
+	//	/* check a valid address */
+	//	if (!addr)
+	//		continue;
+	//	/* call the methods to calculate stack distances */
+	//	//listStack.calStackDist(addr);
+	//	uint64_t mask = 63;
+	//	addr = addr & (~mask);
+	//	avlTreeStack.calStackDist(addr, histogram);
+	//}
+	////listStack.print("E:\\ShareShen\\gem5-origin\\m5out-se-x86\\perlbench.txt");
+	//std::cout << "transiting stack distances..." << std::endl;
+	//int cap = 32 * 1024;
+	//int blk = 64;
+	//int assoc = 16;
+	///* transforming and calculating miss rate */
+	//bool succ = histogram.mapToVector();
+	//double lruMissRate = histogram.calMissRate(cap, blk, assoc, false);
+	////double lruTraMissRate = histogram.fullyToSetAssoc(cap, blk, assoc);
+	////double plruMissRate2 = histogram.calMissRate(cap, blk, assoc, true);
+	////double plruMissRate = histogram.calMissRate(cap, blk, assoc, true);
+	//fileOut << lruMissRate << " " << std::endl;
+	//fileOut.close();
 }
 
 int main()
@@ -889,11 +998,40 @@ int main()
 	//void * q = a;
 	//uint64_t c = reinterpret_cast<uint64_t> (q);
 	std::ifstream fin;
-	fin.open("E:\\ShareShen\\pin-3.2-81205-gcc-linux\\source\\tools\\memTraceSimple\\gcc-trace\\gcc-166-0.0002-100M.txt", std::ios::binary | std::ios::in);
+	//fin.open("E:\\ShareShen\\pin-3.2-81205-gcc-linux\\source\\tools\\memTraceSimple\\gcc-trace\\gcc-trunc-32768-log-norm.txt", std::ios::in);
+	fin.open("E:\\ShareShen\\pin-3.2-81205-gcc-linux\\source\\tools\\memTraceSimple\\gcc-trace\\gcc-trunc-131072.txt", std::ios::binary | std::ios::in);
+	//fin.open("E:\\ShareShen\\gem5-stable-2015\\m5out\\SDD-origin.dump", std::ios::in);
+	//fin.open("E:\\ShareShen\\gem5-stable\\m5out-se-x86\\cactusADM\\cactusADM-trace-part.txt", std::ios::in);
 	if (fin.fail()) {
 		std::cout << "SDD file openning failed! " << std::endl;
 		return 0;
 	}
+
+	//std::ofstream fout;
+	//fout.open("temp.txt", std::ios::out | std::ios::binary);
+	//int64_t a[2] = { 12345, 9999909 };
+	//fout.write((char *)a, sizeof(int64_t) * 2);
+	//int64_t h[2] = { 5533445, 999477709 };
+	//fout.write((char *)h, sizeof(int64_t) * 2);
+	//int64_t w[2] = { 634452, 9676666433 };
+	//fout.write((char *)w, sizeof(int64_t) * 2);
+	//fout.close();
+
+	//std::ifstream fbin;
+	//fbin.open("temp.txt", std::ios::in | std::ios::binary);
+	//int64_t * b = new int64_t[2];
+	//int64_t c[2];
+	//fbin.read((char *)b, sizeof(int64_t) * 2);
+	//for (int i = 0; i < 2; ++i)
+	//	c[i] = b[i];
+	//fbin.read((char *)b, sizeof(int64_t) * 2);
+	//for (int i = 0; i < 2; ++i)
+	//	c[i] = b[i];
+	//fbin.read((char *)b, sizeof(int64_t) * 2);
+	//for (int i = 0; i < 2; ++i)
+	//	c[i] = b[i];
+
+
 	Reader reader(fin);
 
  	return 0;
