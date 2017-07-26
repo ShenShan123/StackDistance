@@ -21,10 +21,10 @@
 //#define REUSE
 #define STACK
 //#define SAMPLE
+//#define LOG
+static int64_t MISS_BAR = 0;
 
-#define MISS_BAR 131072
-
-static int64_t Trunc;
+static int64_t Trunc = 0;
 
 /* for recording distribution into a Histogram, 
    Accur is the accuracy of transforming calculation */
@@ -63,7 +63,7 @@ public:
 	/* use boost binomial distribution to do a fully-to-set-associative cache transformation */
 	Accur fullyToSetAssoc(const int & cap, const int & blk, const int & assoc);
 	/* use boost poisson distribution to do a fully-to-set-associative cache transformation */
-	void fullyToSetAssoc_Poisson(const int & cap, const int & blk, const int & assoc);
+	Accur calLruMissRatePoisson(const int & cap, const int & blk, const int & assoc);
 	/* transform reuse distance distribution to stack distance distribution */
 	void reuseDistToStackDist();
 
